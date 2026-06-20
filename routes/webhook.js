@@ -976,8 +976,6 @@ async function DebitBalance(wamid, category) {
             await pool.query("INSERT INTO `transactions`(`transaction_id`, `project_id`, `create_date`, `create_by`, `type`, `transaction_type`, `amount`, `value_1`, `value_2`,`username`) VALUES (?,?,?,?,?,?,?,?,?,?)", [transaction_id, project_id, TIMESTAMP(), 'SYSTEM', '0', 'template send', charges, wamid, category, admin_username]);
         }
     }
-
-
 }
 
 

@@ -4,6 +4,7 @@ import pool from "../db.js";
 import { startCampaignScheduler } from "../helpers/campaign/scheduler.js";
 import { AISENSY_API_KEY, AISENSY_PARTNER_ID } from "../helpers/Config.js";
 import { GET_PROJECT_BILLING_STATUS } from "../helpers/function.js";
+import SetWebhookSubscription from "../helpers/SetWebhookSubscription.js";
 
 const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
@@ -14,6 +15,14 @@ const schedule = (expression, fn, options = {}) => {
 
 export function startCronJobs() {
     startCampaignScheduler();
+
+    schedule("*/5 * * * *", async () => {
+        try {
+            await SetWebhookSubscription();
+        } catch (error) {
+            console.error("[cron] SetWebhookSubscription error:", error?.message || error);
+        }
+    });
 
     schedule("* * * * *", async () => {
         //   Cron to start or stop project billing

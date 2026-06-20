@@ -27,6 +27,7 @@ import { startCronJobs } from "./routes/cron.js";
 import planRouter from "./routes/plan.js";
 import developerRouter from "./developerRoutes/index.js";
 import { generateSummary } from "./generate-db-summary.js";
+import SetWebhookSubscription from "./helpers/SetWebhookSubscription.js";
 
 const app = express();
 app.use(cors({
@@ -170,6 +171,7 @@ app.get("/error/:filename", (req, res) => {
 });
 
 app.use("/chat-media", express.static(path.join(process.cwd(), "/media/chat")));
+
 
 
 const server = http.createServer(app);

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-18T16:48:56.248Z",
+  "generatedAt": "2026-06-20T16:55:16.641Z",
   "database": "u278432002_onechatting",
   "tableCount": 26,
   "tables": [
@@ -117,7 +117,7 @@
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-06-14T02:57:52.000Z",
-      "updateTime": "2026-06-17T04:07:49.000Z",
+      "updateTime": "2026-06-20T11:22:15.000Z",
       "columns": [
         {
           "name": "id",
@@ -637,7 +637,7 @@
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-18T10:36:46.000Z",
+      "updateTime": "2026-06-20T08:38:55.000Z",
       "columns": [
         {
           "name": "id",
@@ -806,11 +806,11 @@
     },
     {
       "table": "cases",
-      "tableRows": 974,
+      "tableRows": 983,
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-18T00:42:46.000Z",
+      "updateTime": "2026-06-20T05:32:09.000Z",
       "columns": [
         {
           "name": "id",
@@ -931,11 +931,11 @@
     },
     {
       "table": "case_messages",
-      "tableRows": 7107,
+      "tableRows": 7212,
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-18T10:37:33.000Z",
+      "updateTime": "2026-06-20T11:03:25.000Z",
       "columns": [
         {
           "name": "id",
@@ -1007,11 +1007,11 @@
     },
     {
       "table": "chat_assigned",
-      "tableRows": 13277,
+      "tableRows": 13278,
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-18T00:26:16.000Z",
+      "updateTime": "2026-06-20T06:23:13.000Z",
       "columns": [
         {
           "name": "id",
@@ -1870,11 +1870,11 @@
     },
     {
       "table": "messages",
-      "tableRows": 109243,
+      "tableRows": 109894,
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-18T10:37:33.000Z",
+      "updateTime": "2026-06-20T11:18:28.000Z",
       "columns": [
         {
           "name": "id",
@@ -2944,11 +2944,11 @@
     },
     {
       "table": "templates",
-      "tableRows": 92,
+      "tableRows": 93,
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-17T22:02:44.000Z",
+      "updateTime": "2026-06-19T21:28:50.000Z",
       "columns": [
         {
           "name": "id",
@@ -3104,11 +3104,11 @@
     },
     {
       "table": "transactions",
-      "tableRows": 5551,
+      "tableRows": 5559,
       "engine": "InnoDB",
       "comment": null,
       "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-17T23:55:19.000Z",
+      "updateTime": "2026-06-20T11:03:06.000Z",
       "columns": [
         {
           "name": "id",
