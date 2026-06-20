@@ -1,0 +1,3574 @@
+{
+  "generatedAt": "2026-06-18T16:48:56.248Z",
+  "database": "u278432002_onechatting",
+  "tableCount": 26,
+  "tables": [
+    {
+      "table": "aisensy_businesses",
+      "tableRows": 12,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": "2026-06-15T01:46:31.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "business_email",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "business_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "password",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "aisensy_projects",
+      "tableRows": 42,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-06-14T02:57:52.000Z",
+      "updateTime": "2026-06-17T04:07:49.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_name",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "business_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "marketing_charge",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "1.32",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "utility_charge",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "0.20",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "authentication_charge",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "0.20",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_waba_connected",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "wa_number",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "profile_picture",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "webhook_url",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "auto_renewal",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "auto_case_create",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "developer_access",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "developer_token",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": "0 = Deactive\r\n1 = Active"
+        }
+      ],
+      "indexes": {
+        "idx_aisensy_projects_project_id": {
+          "columns": [
+            "project_id"
+          ],
+          "nonUnique": true
+        },
+        "idx_aisensy_projects_status": {
+          "columns": [
+            "status"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "aisensy_token",
+      "tableRows": 42,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-17T03:45:38.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "token",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "campaigns",
+      "tableRows": 49,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-05T05:06:46.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "campaign_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "template_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "entry_complete",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "source",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "url",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "group_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "has_error",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "error_file",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1','2')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": "0 = pending\r\n1 = complete\r\n2 = stopped"
+        },
+        {
+          "name": "schedule_date",
+          "type": "datetime",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "params",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "deleted_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_campaigns_campaignid_deleted": {
+          "columns": [
+            "campaign_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_campaigns_project_campaignid": {
+          "columns": [
+            "project_id",
+            "campaign_id"
+          ],
+          "nonUnique": true
+        },
+        "idx_campaigns_project_deleted_id": {
+          "columns": [
+            "project_id",
+            "is_deleted",
+            "id"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "campaign_messages",
+      "tableRows": 9630,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": "2026-06-18T10:36:46.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "campaign_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "template_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "template_name",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "language_code",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "component",
+          "type": "longtext",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "wamid",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "send_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('pending','sent','delivered','read','failed')",
+          "nullable": false,
+          "key": null,
+          "default": "'pending'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "failed_reason",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_cmsg_campaign_status": {
+          "columns": [
+            "campaign_id",
+            "status"
+          ],
+          "nonUnique": true
+        },
+        "idx_cmsg_project_campaign": {
+          "columns": [
+            "project_id",
+            "campaign_id"
+          ],
+          "nonUnique": true
+        },
+        "idx_cmsg_unique_id": {
+          "columns": [
+            "unique_id"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "cases",
+      "tableRows": 974,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-18T00:42:46.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "case_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "remark",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_cases_project_number_status": {
+          "columns": [
+            "project_id",
+            "number",
+            "status"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "case_messages",
+      "tableRows": 7107,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-18T10:37:33.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "case_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "message_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_casemsg_message_id": {
+          "columns": [
+            "message_id"
+          ],
+          "nonUnique": true
+        },
+        "idx_casemsg_project_caseid": {
+          "columns": [
+            "project_id",
+            "case_id"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "chat_assigned",
+      "tableRows": 13277,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": "2026-06-18T00:26:16.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_chatassigned_project_number_id": {
+          "columns": [
+            "project_id",
+            "number",
+            "id"
+          ],
+          "nonUnique": true
+        },
+        "idx_chatassigned_project_number_user": {
+          "columns": [
+            "project_id",
+            "number",
+            "username"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "contacts",
+      "tableRows": 13604,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": "2026-06-17T03:56:35.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "contact_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "firm_name",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "website",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "remark",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "delete_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_contacts_project_contactid_deleted": {
+          "columns": [
+            "project_id",
+            "contact_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_contacts_project_deleted": {
+          "columns": [
+            "project_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_contacts_project_deleted_name": {
+          "columns": [
+            "project_id",
+            "is_deleted",
+            "name"
+          ],
+          "nonUnique": true
+        },
+        "idx_contacts_project_number_deleted": {
+          "columns": [
+            "project_id",
+            "number",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "contact_groups",
+      "tableRows": 12,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "group_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "remark",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "delete_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_cgroups_project_deleted": {
+          "columns": [
+            "project_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_cgroups_project_groupid_deleted": {
+          "columns": [
+            "project_id",
+            "group_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "contact_group_mapping",
+      "tableRows": 147,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "contact_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "group_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "delete_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_cgmap_contactid": {
+          "columns": [
+            "contact_id"
+          ],
+          "nonUnique": true
+        },
+        "idx_cgmap_groupid_contactid_deleted": {
+          "columns": [
+            "group_id",
+            "contact_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_cgmap_groupid_deleted": {
+          "columns": [
+            "group_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "custom_package",
+      "tableRows": 12,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "custom_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "monthly",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "0.00",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "yearly",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "0.00",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "favorite_contacts",
+      "tableRows": 7,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "favorite_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_fav_project_username_number": {
+          "columns": [
+            "project_id",
+            "username",
+            "number"
+          ],
+          "nonUnique": true
+        },
+        "idx_fav_project_username_status": {
+          "columns": [
+            "project_id",
+            "username",
+            "status"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "login_token",
+      "tableRows": 55,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-18T09:35:48.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "token",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "expire_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1','2')",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "0 = logout\r\n1 = active\r\n2 = force logout"
+        }
+      ],
+      "indexes": {
+        "idx_logintoken_token_username_status": {
+          "columns": [
+            "token",
+            "username",
+            "status"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "messages",
+      "tableRows": 109243,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-18T10:37:33.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "UNI",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "wamid",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "message_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "enum('in','out')",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "message_type",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "file_name",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "file_path",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "location_address",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "latitude",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "longitude",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "location_name",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "failed_reason",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_template",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "template_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "component",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_forwarded",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_reply",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_voice",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": "If user send voice by inbuild whatsapp chat then it is true means 1 else 0 means false"
+        },
+        {
+          "name": "is_campaign",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "campaign_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_read",
+          "type": "enum('0','1')",
+          "nullable": true,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "read_by",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "reply_wamid",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('pending','sent','delivered','read','failed','received')",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "0 = Failed\r\n1 = Sent\r\n2 = Delivered\r\n3 = Read"
+        },
+        {
+          "name": "raw_json",
+          "type": "longtext",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_messages_project_number_id": {
+          "columns": [
+            "project_id",
+            "number",
+            "id"
+          ],
+          "nonUnique": true
+        },
+        "idx_messages_project_number_type_read": {
+          "columns": [
+            "project_id",
+            "number",
+            "type",
+            "is_read"
+          ],
+          "nonUnique": true
+        },
+        "idx_messages_unique_id": {
+          "columns": [
+            "unique_id"
+          ],
+          "nonUnique": true
+        },
+        "idx_messages_wamid": {
+          "columns": [
+            "wamid"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        },
+        "unique_id": {
+          "columns": [
+            "unique_id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "otp",
+      "tableRows": 0,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "otp",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "expire_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('pending','success')",
+          "nullable": false,
+          "key": null,
+          "default": "'pending'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "package",
+      "tableRows": 2,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "package_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "amount",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "0.00",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "validity",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": "'1m'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "password_resets",
+      "tableRows": 9,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_ip",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1')",
+          "nullable": true,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "expire_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "token",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "payment_orders",
+      "tableRows": 240,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-15T04:04:46.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "order_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "payment_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "amount",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "mobile",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "utr",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1','2')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "permission_list",
+      "tableRows": 24,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "permission_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "remark",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "permission_options",
+      "tableRows": 237,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "permission_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "permission",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "project_mapping",
+      "tableRows": 79,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-06-09T12:46:39.000Z",
+      "updateTime": "2026-06-17T03:45:38.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "enum('admin','agent')",
+          "nullable": false,
+          "key": null,
+          "default": "'admin'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "permission_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "developer_token",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "delete_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_pmap_project_deleted": {
+          "columns": [
+            "project_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_pmap_project_type_deleted": {
+          "columns": [
+            "project_id",
+            "type",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_pmap_uniqueid_project_deleted": {
+          "columns": [
+            "unique_id",
+            "project_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "idx_pmap_username_project_deleted": {
+          "columns": [
+            "username",
+            "project_id",
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "templates",
+      "tableRows": 92,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:47.000Z",
+      "updateTime": "2026-06-17T22:02:44.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "template_id",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "waba_template_id",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "category",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "template_name",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "language_code",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": "MUL",
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "reject_reason",
+          "type": "varchar(1000)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "deleted_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_templates_project_templateid": {
+          "columns": [
+            "project_id",
+            "template_id"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "transactions",
+      "tableRows": 5551,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-17T23:55:19.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "transaction_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "transaction_type",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "amount",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "remark",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "value_1",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "value_2",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "value_3",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "value_4",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "value_5",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "users",
+      "tableRows": 38,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-15T01:59:04.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "password",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "email",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "name",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "firm_name",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "country_code",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "mobile",
+          "type": "varchar(1000)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "gender",
+          "type": "enum('male','female','others')",
+          "nullable": false,
+          "key": null,
+          "default": "'male'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "business_name",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "business_type",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "kyc_verified",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "role",
+          "type": "enum('user','admin','','')",
+          "nullable": false,
+          "key": null,
+          "default": "'user'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "user_package",
+      "tableRows": 22,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-05-16T02:16:50.000Z",
+      "updateTime": "2026-06-17T03:45:38.000Z",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "subscription_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "username",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "package_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": "'project'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "amount",
+          "type": "decimal(25,2)",
+          "nullable": false,
+          "key": null,
+          "default": "0.00",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    }
+  ]
+}
