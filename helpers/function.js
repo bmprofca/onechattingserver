@@ -24,31 +24,16 @@ const RANDOM_STRING = (length = 10) => {
     return arr.join('');
 }
 
-const TIMESTAMP = () => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mi = String(now.getMinutes()).padStart(2, "0");
-    const ss = String(now.getSeconds()).padStart(2, "0");
+const IST_TIMEZONE = "Asia/Kolkata";
 
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
-}
+const toISTDateTimeString = (date = new Date()) =>
+    date.toLocaleString("sv-SE", { timeZone: IST_TIMEZONE });
 
+const TIMESTAMP = () => toISTDateTimeString(new Date());
 
 const FUTURE_TIMESTAMP = (minutes = 3) => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + minutes); // add given minutes
-
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mi = String(now.getMinutes()).padStart(2, "0");
-    const ss = String(now.getSeconds()).padStart(2, "0");
-
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+    const future = new Date(Date.now() + minutes * 60 * 1000);
+    return toISTDateTimeString(future);
 };
 
 
@@ -287,14 +272,8 @@ function GENERATE_EMAIL_ADDRESS() {
 }
 
 
-const TODAY_DATE = () => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-
-    return `${yyyy}-${mm}-${dd}`;
-}
+const TODAY_DATE = () =>
+    new Date().toLocaleDateString("sv-SE", { timeZone: IST_TIMEZONE });
 
 const GET_PROJECT_BILLING_STATUS = async (project_id = '') => {
     const [row] = await pool.query("SELECT * FROM user_package WHERE project_id = ? AND start_date <= ? AND end_date >= ?", [project_id, TODAY_DATE(), TODAY_DATE()]);

@@ -27,10 +27,7 @@ let isRunning = false;
  * Get current time in IST as "YYYY-MM-DD HH:mm:ss" string
  */
 function getCurrentISTString() {
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istTime = new Date(now.getTime() + istOffset);
-    return istTime.toISOString().slice(0, 19).replace("T", " ");
+    return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Kolkata" });
 }
 
 async function checkScheduledCampaigns(isStartup = false) {
