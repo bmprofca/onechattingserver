@@ -17,10 +17,10 @@ const verifyProjectOwner = async (username, project_id) => {
 router.get("/access-info", auth, async (req, res) => {
     try {
         const username = req.headers["username"] ? req.headers["username"] : "";
-        const project_id = req.headers["branch_id"] ? req.headers["branch_id"] : "";
+        const project_id = req.headers["project_id"] ? req.headers["project_id"] : "";
 
         if (!project_id) {
-            return res.status(200).json({ error: "Provide branch_id in header" });
+            return res.status(200).json({ error: "Provide project_id in header" });
         }
 
         const isOwner = await verifyProjectOwner(username, project_id);
@@ -77,11 +77,11 @@ router.get("/access-info", auth, async (req, res) => {
 router.post("/update-developer-access", auth, async (req, res) => {
     try {
         const username = req.headers["username"] ? req.headers["username"] : "";
-        const project_id = req.headers["branch_id"] ? req.headers["branch_id"] : "";
+        const project_id = req.headers["project_id"] ? req.headers["project_id"] : "";
         const { status } = req.body || {};
 
         if (!project_id) {
-            return res.status(200).json({ error: "Provide branch_id in header" });
+            return res.status(200).json({ error: "Provide project_id in header" });
         }
 
         if (typeof status !== "boolean") {
@@ -125,10 +125,10 @@ router.post("/update-developer-access", auth, async (req, res) => {
 router.put("/update-developer-access", auth, async (req, res) => {
     try {
         const username = req.headers["username"] ? req.headers["username"] : "";
-        const project_id = req.headers["branch_id"] ? req.headers["branch_id"] : "";
+        const project_id = req.headers["project_id"] ? req.headers["project_id"] : "";
 
         if (!project_id) {
-            return res.status(200).json({ error: "Provide branch_id in header" });
+            return res.status(200).json({ error: "Provide project_id in header" });
         }
 
         const isOwner = await verifyProjectOwner(username, project_id);
@@ -168,11 +168,11 @@ router.put("/update-developer-access", auth, async (req, res) => {
 router.put("/update-agent-developer-token", auth, async (req, res) => {
     try {
         const username = req.headers["username"] ? req.headers["username"] : "";
-        const project_id = req.headers["branch_id"] ? req.headers["branch_id"] : "";
+        const project_id = req.headers["project_id"] ? req.headers["project_id"] : "";
         const { unique_id } = req.body || {};
 
         if (!project_id) {
-            return res.status(200).json({ error: "Provide branch_id in header" });
+            return res.status(200).json({ error: "Provide project_id in header" });
         }
 
         if (!unique_id) {
