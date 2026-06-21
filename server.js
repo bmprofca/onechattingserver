@@ -26,6 +26,7 @@ import { setupSocketIO } from "./helpers/Socket.js";
 import { startCronJobs } from "./routes/cron.js";
 import planRouter from "./routes/plan.js";
 import developerRouter from "./developerRoutes/index.js";
+import developerSettingsRouter from "./routes/developer.js";
 import { generateSummary } from "./generate-db-summary.js";
 import SetWebhookSubscription from "./helpers/SetWebhookSubscription.js";
 
@@ -62,6 +63,7 @@ app.use("/bot-reply", botReplyRouter);
 
 app.use("/admin", adminRouter);
 app.use("/plan", planRouter);
+app.use("/developer", developerSettingsRouter);
 app.use("/developer", developerRouter);
 
 const __filename = fileURLToPath(import.meta.url);
@@ -186,15 +188,18 @@ app.get("/health", (req, res) => {
 });
 
 
-generateSummary();
+if (process.env.GENERATE_DB_SUMMARY === "true") {
+    generateSummary();
+}
 
 const PORT = 6540;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
 
-    // Start all cron jobs
     startCronJobs();
-    startWebhookQueueDaemon({ intervalMs: 500 });
+    startWebhookQueueDaemon({
+        intervalMs: Number(process.env.WEBHOOK_QUEUE_INTERVAL_MS) || 3000,
+    });
 });
 
 

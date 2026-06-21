@@ -15,7 +15,7 @@ import {
     getDashboardSummary,
     updateProjectCharges
 } from '../helpers/adminDb.js';
-import { GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, USER_DATA } from '../helpers/function.js';
+import { GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP } from '../helpers/function.js';
 import subscriptionDb from '../helpers/subscriptionDb.js';
 import { Decrypt } from '../helpers/Decrypt.js';
 import pool from '../db.js';
@@ -215,6 +215,36 @@ router.get('/user/transaction-history/:username', async (req, res) => {
         const [rows] = await pool.query(query, params);
         const res_data = [];
 
+        const creatorUsernames = rows
+            .map((element) => element.create_by)
+            .filter((createBy) => createBy && !['SYSTEM'].includes(createBy));
+        const userMap = await USER_DATA_MAP(creatorUsernames);
+
+        const walletOrderIds = rows
+            .filter((element) => (element.transaction_type || '').toLowerCase().includes('wallet topup') && element.value_1)
+            .map((element) => element.value_1);
+        const templateWamids = rows
+            .filter((element) => (element.transaction_type || '').toLowerCase().includes('template send') && element.value_1)
+            .map((element) => element.value_1);
+
+        let paymentOrderMap = new Map();
+        if (walletOrderIds.length > 0) {
+            const [orderRows] = await pool.query(
+                "SELECT order_id, payment_id, type, amount, name, email, mobile, utr, status, create_date FROM payment_orders WHERE order_id IN (?)",
+                [[...new Set(walletOrderIds)]]
+            );
+            paymentOrderMap = new Map(orderRows.map((order) => [order.order_id, order]));
+        }
+
+        let messageMap = new Map();
+        if (templateWamids.length > 0) {
+            const [messageRows] = await pool.query(
+                "SELECT messages.*, templates.template_name, templates.language_code, templates.category FROM messages JOIN templates ON templates.template_id = messages.template_id WHERE wamid IN (?)",
+                [[...new Set(templateWamids)]]
+            );
+            messageMap = new Map(messageRows.map((message) => [message.wamid, message]));
+        }
+
         // Process results
         if (rows.length > 0) {
             for (const element of rows) {
@@ -230,7 +260,7 @@ router.get('/user/transaction-history/:username', async (req, res) => {
 
                 // Add creator info if not SYSTEM
                 if (!['SYSTEM'].includes(element.create_by)) {
-                    const create_by_data = await USER_DATA(element.create_by);
+                    const create_by_data = userMap.get(element.create_by) || {};
                     transaction.create_by_details = {
                         username: create_by_data?.username,
                         mobile: create_by_data?.mobile,
@@ -245,54 +275,36 @@ router.get('/user/transaction-history/:username', async (req, res) => {
 
                     // Wallet topup: value_1 contains payment_orders.order_id
                     if (transactionType.includes('wallet topup')) {
-                        try {
-                            const [order_rows] = await pool.query(
-                                "SELECT order_id, payment_id, type, amount, name, email, mobile, utr, status, create_date FROM payment_orders WHERE order_id = ?",
-                                [element.value_1]
-                            );
-
-                            if (order_rows.length > 0) {
-                                const order_data = order_rows[0];
-                                transaction.payment_details = {
-                                    payment_id: order_data.payment_id,
-                                    amount: Number(order_data.amount),
-                                    name: order_data.name,
-                                    email: order_data.email,
-                                    mobile: order_data.mobile,
-                                    utr: order_data.utr,
-                                    create_date: order_data.create_date,
-                                    status: order_data.status
-                                };
-                            }
-                        } catch (error) {
-                            console.error('Error fetching payment order details:', error);
+                        const order_data = paymentOrderMap.get(element.value_1);
+                        if (order_data) {
+                            transaction.payment_details = {
+                                payment_id: order_data.payment_id,
+                                amount: Number(order_data.amount),
+                                name: order_data.name,
+                                email: order_data.email,
+                                mobile: order_data.mobile,
+                                utr: order_data.utr,
+                                create_date: order_data.create_date,
+                                status: order_data.status
+                            };
                         }
                     }
 
                     // Template send: value_1 contains messages.wamid
                     else if (transactionType.includes('template send')) {
-                        try {
-                            const [message_rows] = await pool.query(
-                                "SELECT messages.*, templates.template_name, templates.language_code, templates.category FROM messages JOIN templates ON templates.template_id = messages.template_id WHERE wamid = ? LIMIT 1",
-                                [element.value_1]
-                            );
-
-                            if (message_rows.length > 0) {
-                                const msg_data = message_rows[0];
-                                transaction.message_details = {
-                                    unique_id: msg_data.unique_id,
-                                    wamid: msg_data.wamid,
-                                    project_id: msg_data.project_id,
-                                    message_by: msg_data.message_by,
-                                    number: msg_data.number,
-                                    create_date: msg_data.create_date,
-                                    template_name: msg_data.template_name,
-                                    language_code: msg_data.language_code,
-                                    category: msg_data.category,
-                                };
-                            }
-                        } catch (error) {
-                            console.error('Error fetching message details:', error);
+                        const msg_data = messageMap.get(element.value_1);
+                        if (msg_data) {
+                            transaction.message_details = {
+                                unique_id: msg_data.unique_id,
+                                wamid: msg_data.wamid,
+                                project_id: msg_data.project_id,
+                                message_by: msg_data.message_by,
+                                number: msg_data.number,
+                                create_date: msg_data.create_date,
+                                template_name: msg_data.template_name,
+                                language_code: msg_data.language_code,
+                                category: msg_data.category,
+                            };
                         }
                     }
                 }

@@ -1,7 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
-import { RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
+import { RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, auditUserRecord } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import * as XLSX from "xlsx";
@@ -1391,46 +1391,27 @@ router.post("/group-list", auth, async (req, res) => {
 
     var [row] = await pool.query("SELECT * FROM `contact_groups` WHERE project_id = ? AND is_deleted = ? ORDER BY id DESC LIMIT ? OFFSET ?", [project_id, '0', limit, offset]);
 
+    const groupIds = row.map((element) => element.group_id);
+    const auditUsernames = row.flatMap((element) => [element.create_by, element.modify_by]);
+    const userMap = await USER_DATA_MAP(auditUsernames);
 
-    const res_data = [];
-
-    for (let index = 0; index < row.length; index++) {
-        const element = row[index];
-
-
-        const creator_data = await USER_DATA(element?.create_by);
-        const modifier_data = await USER_DATA(element?.modify_by);
-
-        const group_id = element?.group_id;
-
-        const [contact_count_row] = await pool.query("SELECT `id` FROM `contact_group_mapping` WHERE group_id = ? AND is_deleted = ?", [group_id, '0'])
-
-        const contact_count = contact_count_row.length;
-
-        const object = {
-            group_id: element?.group_id,
-            name: element?.name,
-            remark: element?.remark,
-            create_by: {
-                username: creator_data?.username,
-                name: creator_data?.name,
-                mobile: creator_data?.mobile,
-                email: creator_data?.email,
-                status: creator_data?.status == '1' ? true : false,
-            },
-            modify_by: {
-                username: modifier_data?.username,
-                name: modifier_data?.name,
-                mobile: modifier_data?.mobile,
-                email: modifier_data?.email,
-                status: modifier_data?.status == '1' ? true : false,
-            },
-            contact_count
-        };
-
-        res_data.push(object);
-
+    let contactCountMap = new Map();
+    if (groupIds.length > 0) {
+        const [contactCountRows] = await pool.query(
+            "SELECT group_id, COUNT(*) AS contact_count FROM `contact_group_mapping` WHERE group_id IN (?) AND is_deleted = ? GROUP BY group_id",
+            [groupIds, '0']
+        );
+        contactCountMap = new Map(contactCountRows.map((item) => [item.group_id, Number(item.contact_count)]));
     }
+
+    const res_data = row.map((element) => ({
+        group_id: element?.group_id,
+        name: element?.name,
+        remark: element?.remark,
+        create_by: auditUserRecord(userMap.get(element?.create_by) || {}, { includeUsername: true }),
+        modify_by: auditUserRecord(userMap.get(element?.modify_by) || {}, { includeUsername: true }),
+        contact_count: contactCountMap.get(element.group_id) || 0,
+    }));
 
     return res.status(200).json({
         data: res_data,
@@ -1536,37 +1517,20 @@ router.post("/group-contact-list", auth, async (req, res) => {
         listParams
     );
 
+    const creatorUsernames = row.map((element) => element?.create_by);
+    const userMap = await USER_DATA_MAP(creatorUsernames);
 
-    const res_data = [];
-
-    for (let index = 0; index < row.length; index++) {
-        const element = row[index];
-
-        const unique_id = element?.unique_id;
-        const contact_id = element?.contact_id;
-
-        const creator_data = await USER_DATA(element?.create_by);
-
-        const group_id = element?.group_id;
-
-        const object = {
-            unique_id,
+    const res_data = row.map((element) => {
+        const creator_data = userMap.get(element?.create_by) || {};
+        return {
+            unique_id: element?.unique_id,
             name: element?.contact_name,
             number: element?.contact_number,
-            contact_id,
-            group_id,
-            create_by: {
-                name: creator_data?.name,
-                username: creator_data?.username,
-                mobile: creator_data?.mobile,
-                email: creator_data?.email,
-                status: creator_data?.status == '1' ? true : false,
-            }
+            contact_id: element?.contact_id,
+            group_id: element?.group_id,
+            create_by: auditUserRecord(creator_data, { includeUsername: true }),
         };
-
-        res_data.push(object);
-
-    }
+    });
 
     return res.status(200).json({
         data: res_data,

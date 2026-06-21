@@ -1,7 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
-import { RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
+import { RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, auditUserRecord } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 
 const router = express.Router();
@@ -299,14 +299,14 @@ router.post("/list", auth, async (req, res) => {
 
         const [rows] = await pool.query(query, params);
 
+        const auditUsernames = rows.flatMap((element) => [element.create_by, element.modify_by]);
+        const userMap = await USER_DATA_MAP(auditUsernames);
+
         const return_data = [];
 
         for (let index = 0; index < rows.length; index++) {
             const element = rows[index];
             last_id = element?.id;
-
-            const creator_data = await USER_DATA(element?.create_by);
-            const modifier_data = await USER_DATA(element?.modify_by);
 
             var object = {
                 context_id: element?.context_id,
@@ -320,20 +320,8 @@ router.post("/list", auth, async (req, res) => {
                 priority: element?.priority,
                 create_date: element?.create_date,
                 modify_date: element?.modify_date,
-                create_by: {
-                    username: creator_data?.username,
-                    name: creator_data?.name,
-                    mobile: creator_data?.mobile,
-                    email: creator_data?.email,
-                    status: creator_data?.status == '1' ? true : false,
-                },
-                modify_by: {
-                    username: modifier_data?.username,
-                    name: modifier_data?.name,
-                    mobile: modifier_data?.mobile,
-                    email: modifier_data?.email,
-                    status: modifier_data?.status == '1' ? true : false,
-                }
+                create_by: auditUserRecord(userMap.get(element?.create_by) || {}, { includeUsername: true }),
+                modify_by: auditUserRecord(userMap.get(element?.modify_by) || {}, { includeUsername: true }),
             };
 
             return_data.push(object);
@@ -391,8 +379,7 @@ router.post("/details", auth, async (req, res) => {
         }
 
         const element = rows[0];
-        const creator_data = await USER_DATA(element?.create_by);
-        const modifier_data = await USER_DATA(element?.modify_by);
+        const userMap = await USER_DATA_MAP([element?.create_by, element?.modify_by]);
 
         const object = {
             context_id: element?.context_id,
@@ -406,20 +393,8 @@ router.post("/details", auth, async (req, res) => {
             priority: element?.priority,
             create_date: element?.create_date,
             modify_date: element?.modify_date,
-            create_by: {
-                username: creator_data?.username,
-                name: creator_data?.name,
-                mobile: creator_data?.mobile,
-                email: creator_data?.email,
-                status: creator_data?.status == '1' ? true : false,
-            },
-            modify_by: {
-                username: modifier_data?.username,
-                name: modifier_data?.name,
-                mobile: modifier_data?.mobile,
-                email: modifier_data?.email,
-                status: modifier_data?.status == '1' ? true : false,
-            }
+            create_by: auditUserRecord(userMap.get(element?.create_by) || {}, { includeUsername: true }),
+            modify_by: auditUserRecord(userMap.get(element?.modify_by) || {}, { includeUsername: true }),
         };
 
         return res.status(200).json({

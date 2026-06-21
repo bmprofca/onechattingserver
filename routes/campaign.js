@@ -2,7 +2,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { AISENSY_PROJECT_DATA, USER_DATA } from "../helpers/function.js";
+import { AISENSY_PROJECT_DATA, USER_DATA, USER_DATA_MAP, auditUserRecord } from "../helpers/function.js";
 import pool from "../db.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { Decrypt } from "../helpers/Decrypt.js";
@@ -422,6 +422,37 @@ router.post("/list", auth, async (req, res) => {
     const return_data = [];
 
     if (rows.length > 0) {
+        const templateIds = [...new Set(rows.map((element) => element.template_id).filter(Boolean))];
+        const auditUsernames = rows.flatMap((element) => [element.create_by, element.modify_by]);
+        const userMap = await USER_DATA_MAP(auditUsernames);
+
+        let templateMap = new Map();
+        if (templateIds.length > 0) {
+            const [templateRows] = await pool.query(
+                "SELECT template_id, template_name FROM templates WHERE project_id = ? AND template_id IN (?)",
+                [project_id, templateIds]
+            );
+            templateMap = new Map(templateRows.map((item) => [item.template_id, item.template_name]));
+        }
+
+        const completeCampaignIds = rows.filter((element) => element.entry_complete == '1').map((element) => element.campaign_id);
+        let recipientStatsMap = new Map();
+        if (completeCampaignIds.length > 0) {
+            const [recipientRows] = await pool.query(`
+                SELECT campaign_id,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                    SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+                    SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
+                    SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) AS \`read\`,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+                FROM campaign_messages
+                WHERE project_id = ? AND campaign_id IN (?)
+                GROUP BY campaign_id
+            `, [project_id, completeCampaignIds]);
+            recipientStatsMap = new Map(recipientRows.map((item) => [item.campaign_id, item]));
+        }
+
         for (let index = 0; index < rows.length; index++) {
             const element = rows[index];
 
@@ -451,30 +482,14 @@ router.post("/list", auth, async (req, res) => {
                 res_status = 'stopped';
             }
 
-            const [template_row] = await pool.query("SELECT * FROM `templates` WHERE project_id = ? AND template_id = ?", [project_id, template_id]);
-            const template_name = template_row[0]?.template_name;
-
-            const creator_data = await USER_DATA(create_by);
-            const modify_data = await USER_DATA(modify_by);
+            const template_name = templateMap.get(template_id);
 
             var object = {
                 campaign_id,
                 name,
-                create_by: {
-                    name: creator_data?.name,
-                    mobile: creator_data?.mobile,
-                    email: creator_data?.email,
-                    username: creator_data?.username,
-                    status: creator_data?.status == '1' ? true : false,
-                },
+                create_by: auditUserRecord(userMap.get(create_by) || {}, { includeUsername: true }),
                 create_date,
-                modify_by: {
-                    name: modify_data?.name,
-                    mobile: modify_data?.mobile,
-                    email: modify_data?.email,
-                    username: modify_data?.username,
-                    status: modify_data?.status == '1' ? true : false,
-                },
+                modify_by: auditUserRecord(userMap.get(modify_by) || {}, { includeUsername: true }),
                 modify_date,
                 entry_complete,
                 source,
@@ -490,26 +505,14 @@ router.post("/list", auth, async (req, res) => {
             }
 
             if (entry_complete) {
-                const [recipients] = await pool.query(`
-                    SELECT 
-                        COUNT(*) AS total,
-                        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                        SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
-                        SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
-                        SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) AS \`read\`,
-                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
-                    FROM campaign_messages
-                    WHERE project_id = ? AND campaign_id = ?
-                    `, [project_id, campaign_id]);
-
-
+                const recipients = recipientStatsMap.get(campaign_id) || {};
                 object.recipients = {
-                    total: Number(recipients[0]?.total),
-                    pending: Number(recipients[0]?.pending),
-                    sent: Number(recipients[0]?.sent) + Number(recipients[0]?.delivered) + Number(recipients[0]?.read),
-                    delivered: Number(recipients[0]?.delivered) + Number(recipients[0]?.read),
-                    read: Number(recipients[0]?.read),
-                    failed: Number(recipients[0]?.failed),
+                    total: Number(recipients?.total || 0),
+                    pending: Number(recipients?.pending || 0),
+                    sent: Number(recipients?.sent || 0) + Number(recipients?.delivered || 0) + Number(recipients?.read || 0),
+                    delivered: Number(recipients?.delivered || 0) + Number(recipients?.read || 0),
+                    read: Number(recipients?.read || 0),
+                    failed: Number(recipients?.failed || 0),
                 }
             }
 
@@ -595,54 +598,29 @@ router.post("/campaign-messages", auth, async (req, res) => {
 
     var [rows] = await pool.query("SELECT * FROM `campaign_messages` WHERE project_id = ? AND status LIKE ? AND campaign_id = ? ORDER BY id DESC LIMIT ? OFFSET ?", [project_id, status_like, campaign_id, limit, offset]);
 
+    const creatorUsernames = rows.map((element) => element?.create_by);
+    const userMap = await USER_DATA_MAP(creatorUsernames);
 
-    const return_data = [];
+    const return_data = rows.map((element) => {
+        var object = {
+            unique_id: element?.unique_id,
+            number: element?.number,
+            template_id: element?.template_id,
+            template_name: element?.template_name,
+            component: JSON.parse(element?.component),
+            wamid: element?.wamid,
+            send_date: element?.send_date,
+            create_by: auditUserRecord(userMap.get(element?.create_by) || {}, { includeUsername: true }),
+            create_date: element?.create_date,
+            status: element?.status
+        };
 
-    if (rows.length > 0) {
-        for (let index = 0; index < rows.length; index++) {
-            const element = rows[index];
-
-            var unique_id = element?.unique_id;
-            var number = element?.number;
-            var create_date = element?.create_date;
-            var create_by = element?.create_by;
-            var template_id = element?.template_id;
-            var template_name = element?.template_name;
-            var component = JSON.parse(element?.component);
-            var wamid = element?.wamid;
-            var send_date = element?.send_date;
-            var status = element?.status;
-            var failed_reason = element?.failed_reason;
-
-            const creator_data = await USER_DATA(create_by);
-
-            var object = {
-                unique_id,
-                number,
-                template_id,
-                template_name,
-                component,
-                wamid,
-                send_date,
-                create_by: {
-                    name: creator_data?.name,
-                    mobile: creator_data?.mobile,
-                    email: creator_data?.email,
-                    username: creator_data?.username,
-                    status: creator_data?.status == '1' ? true : false,
-                },
-                create_date,
-                status
-            };
-
-            if (status == 'failed') {
-                object.failed_reason = failed_reason;
-            }
-
-            return_data.push(object);
+        if (element?.status == 'failed') {
+            object.failed_reason = element?.failed_reason;
         }
 
-    }
+        return object;
+    });
 
     return res.status(200).json({
         data: return_data,
@@ -711,13 +689,12 @@ router.post("/campaign-details", auth, async (req, res) => {
         status = 'stopped';
     }
 
-    const [template_row] = await pool.query("SELECT * FROM `templates` WHERE project_id = ? AND template_id = ?", [project_id, template_id]);
+    const [template_row] = await pool.query("SELECT template_name, category, language_code FROM `templates` WHERE project_id = ? AND template_id = ? LIMIT 1", [project_id, template_id]);
     const template_name = template_row[0]?.template_name;
     const category = template_row[0]?.category || '';
     const language_code = template_row[0]?.language_code || '';
 
-    const creator_data = await USER_DATA(create_by);
-    const modify_data = await USER_DATA(modify_by);
+    const userMap = await USER_DATA_MAP([create_by, modify_by]);
 
 
     const object = {
@@ -728,20 +705,8 @@ router.post("/campaign-details", auth, async (req, res) => {
         status,
         entry_complete,
         source,
-        create_by: {
-            name: creator_data?.name,
-            mobile: creator_data?.mobile,
-            email: creator_data?.email,
-            username: creator_data?.username,
-            status: creator_data?.status == '1' ? true : false,
-        },
-        modify_by: {
-            name: modify_data?.name,
-            mobile: modify_data?.mobile,
-            email: modify_data?.email,
-            username: modify_data?.username,
-            status: modify_data?.status == '1' ? true : false,
-        },
+        create_by: auditUserRecord(userMap.get(create_by) || {}, { includeUsername: true }),
+        modify_by: auditUserRecord(userMap.get(modify_by) || {}, { includeUsername: true }),
         template: {
             template_id,
             template_name,

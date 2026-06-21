@@ -1,34 +1,60 @@
 import pool from "../db.js";
 import { TODAY_DATE } from "../helpers/function.js";
 
+const TOKEN_CACHE_TTL_MS = Number(process.env.AUTH_CACHE_TTL_MS) || 5 * 60 * 1000;
+const PROJECT_MAPPING_CACHE_TTL_MS = Number(process.env.PROJECT_MAPPING_CACHE_TTL_MS) || 2 * 60 * 1000;
+const PROJECT_VALIDITY_CACHE_TTL_MS = Number(process.env.PROJECT_VALIDITY_CACHE_TTL_MS) || 2 * 60 * 1000;
+const TOKEN_CACHE_MAX_SIZE = 500;
+const tokenCache = new Map();
+const projectMappingCache = new Map();
+const projectValidityCache = new Map();
+
+function trimCache(cache, maxSize) {
+    if (cache.size < maxSize) return;
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) cache.delete(oldestKey);
+}
+
+function getCachedValue(cache, key) {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (entry.expires <= Date.now()) {
+        cache.delete(key);
+        return null;
+    }
+    return entry.value;
+}
+
+function setCachedValue(cache, key, value, ttlMs, maxSize = 1000) {
+    trimCache(cache, maxSize);
+    cache.set(key, { value, expires: Date.now() + ttlMs });
+}
+
 async function checkToken(username, token) {
+    const cacheKey = `${username}:${token}`;
+    const cached = getCachedValue(tokenCache, cacheKey);
+    if (cached !== null) {
+        return cached;
+    }
+
     try {
         const [rows] = await pool.query(
-            "SELECT login_token.id,users.status AS user_status FROM login_token JOIN users ON users.username = login_token.username WHERE login_token.token = ? AND login_token.username = ? AND login_token.status = '1'",
+            "SELECT login_token.id, users.status AS user_status FROM login_token JOIN users ON users.username = login_token.username WHERE login_token.token = ? AND login_token.username = ? AND login_token.status = '1' LIMIT 1",
             [token, username]
         );
 
-        if (rows.length == 1) {
-            var user_status = rows[0]?.user_status;
-            if (user_status == '1') {
-                return true;
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        }
-
+        const isValid = rows.length === 1 && rows[0]?.user_status === "1";
+        setCachedValue(tokenCache, cacheKey, isValid, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_MAX_SIZE);
+        return isValid;
     } catch (err) {
         console.error("Token check error:", err);
         return false;
     }
 }
 
-// Express middleware
 async function auth(req, res, next) {
-    const token = req.headers["token"] ? req.headers["token"] : '';
-    const username = req.headers["username"] ? req.headers["username"] : '';
+    const token = req.headers["token"] ? req.headers["token"] : "";
+    const username = req.headers["username"] ? req.headers["username"] : "";
 
     if (!token || !username) {
         return res.status(200).json({ error: "Session expired" });
@@ -43,39 +69,42 @@ async function auth(req, res, next) {
     next();
 }
 
-// Express middleware
 async function CheckUserProjectMaping(username, project_id) {
-
-    const [row] = await pool.query("SELECT * FROM project_mapping WHERE username = ? AND project_id = ? AND is_deleted = ?", [username, project_id, '0']);
-
-    if (row.length == 1) {
-        return true;
-    } else {
-        return false;
+    const cacheKey = `${username}:${project_id}`;
+    const cached = getCachedValue(projectMappingCache, cacheKey);
+    if (cached !== null) {
+        return cached;
     }
+
+    const [row] = await pool.query(
+        "SELECT id FROM project_mapping WHERE username = ? AND project_id = ? AND is_deleted = ? LIMIT 1",
+        [username, project_id, "0"]
+    );
+
+    const isMapped = row.length === 1;
+    setCachedValue(projectMappingCache, cacheKey, isMapped, PROJECT_MAPPING_CACHE_TTL_MS);
+    return isMapped;
 }
 
 async function CheckProjectValidity(project_id = "") {
+    const cached = getCachedValue(projectValidityCache, project_id);
+    if (cached !== null) {
+        return cached;
+    }
+
     try {
         const [rows] = await pool.query(
-            "SELECT id FROM user_package WHERE project_id = ? AND start_date <= ? AND end_date >= ?",
+            "SELECT id FROM user_package WHERE project_id = ? AND start_date <= ? AND end_date >= ? LIMIT 1",
             [project_id, TODAY_DATE(), TODAY_DATE()]
         );
 
-        console.log(pool.format(
-            "SELECT id FROM user_package WHERE project_id = ? AND start_date <= ? AND end_date >= ?",
-            [project_id, TODAY_DATE(), TODAY_DATE()]
-        ))
-
-        if (rows.length > 0) {
-            return true;
-        } else {
-            return false;
-        }
+        const isValid = rows.length > 0;
+        setCachedValue(projectValidityCache, project_id, isValid, PROJECT_VALIDITY_CACHE_TTL_MS);
+        return isValid;
     } catch (err) {
         console.error("CheckProjectValidity error:", err);
         return false;
     }
 }
 
-export { auth, CheckUserProjectMaping, CheckProjectValidity }
+export { auth, CheckUserProjectMaping, CheckProjectValidity };

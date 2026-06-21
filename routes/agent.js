@@ -1,7 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
-import { RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
+import { RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 
 const router = express.Router();
@@ -92,6 +92,9 @@ router.post("/list", auth, async (req, res) => {
 
     const [row] = await pool.query("SELECT project_mapping.*,users.name,users.email, users.mobile, users.status,permission_list.name AS permission_name FROM `project_mapping` JOIN users ON users.username = project_mapping.username JOIN permission_list ON permission_list.permission_id = project_mapping.permission_id WHERE project_mapping.project_id = ? AND project_mapping.type = ? AND project_mapping.is_deleted = ? ORDER BY users.name ASC", [project_id, 'agent', '0']);
 
+    const auditUsernames = row.flatMap((element) => [element.create_by, element.modify_by]);
+    const userMap = await USER_DATA_MAP(auditUsernames);
+
     const res_data = [];
 
     for (let index = 0; index < row.length; index++) {
@@ -110,8 +113,8 @@ router.post("/list", auth, async (req, res) => {
         const mapping_id = element?.unique_id;
 
 
-        const create_by_data = await USER_DATA(create_by);
-        const modify_by_data = await USER_DATA(modify_by);
+        const create_by_data = userMap.get(create_by) || {};
+        const modify_by_data = userMap.get(modify_by) || {};
 
         var object = {
             name,

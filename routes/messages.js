@@ -1,7 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import { auth, CheckProjectValidity, CheckUserProjectMaping } from "../middleware/auth.js";
-import { AISENSY_PROJECT_DATA, GET_BALANCE, GetAiSensyProjectToken, MOVE_MEDIA, RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
+import { AISENSY_PROJECT_DATA, GET_BALANCE, GetAiSensyProjectToken, MOVE_MEDIA, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, auditUserRecord } from "../helpers/function.js";
 import axios from "axios";
 import fs from "fs";
 import path from "path";
@@ -2091,39 +2091,20 @@ router.post("/case-list", auth, async (req, res) => {
         const listSql = `SELECT * FROM \`cases\` ${baseWhere}${numberWhere}${statusWhere}${searchWhere} ORDER BY id DESC LIMIT ?, ?`;
         const [case_list_row] = await pool.query(listSql, listParams);
 
+        const auditUsernames = case_list_row.flatMap((item) => [item?.create_by, item?.modify_by]);
+        const userMap = await USER_DATA_MAP(auditUsernames);
 
-
-        const return_data = await Promise.all(
-            case_list_row.map(async (item) => {
-                const create_by_data = await USER_DATA(item?.create_by);
-                const modify_by_data = await USER_DATA(item?.modify_by);
-                const create_by = {
-                    username: create_by_data?.username,
-                    name: create_by_data?.name,
-                    mobile: create_by_data?.mobile,
-                    email: create_by_data?.email,
-                    status: create_by_data?.status == "1"
-                };
-                const modify_by = {
-                    username: modify_by_data?.username,
-                    name: modify_by_data?.name,
-                    mobile: modify_by_data?.mobile,
-                    email: modify_by_data?.email,
-                    status: modify_by_data?.status == "1"
-                };
-                return {
-                    case_id: item?.case_id,
-                    number: item?.number,
-                    status: item?.status == "0",
-                    name: item?.name,
-                    remark: item?.remark,
-                    create_date: item?.create_date,
-                    create_by: create_by,
-                    modify_date: item?.modify_date,
-                    modify_by: modify_by
-                };
-            })
-        );
+        const return_data = case_list_row.map((item) => ({
+            case_id: item?.case_id,
+            number: item?.number,
+            status: item?.status == "0",
+            name: item?.name,
+            remark: item?.remark,
+            create_date: item?.create_date,
+            create_by: auditUserRecord(userMap.get(item?.create_by) || {}, { includeUsername: true }),
+            modify_date: item?.modify_date,
+            modify_by: auditUserRecord(userMap.get(item?.modify_by) || {}, { includeUsername: true }),
+        }));
 
 
         const total_page = Math.ceil(total / limit) || 1;
@@ -2450,44 +2431,25 @@ router.post("/open-case-list", auth, async (req, res) => {
             caseMap.get(num).push(element);
         }
 
+        const caseAuditUsernames = caseRows.flatMap((element) => [element?.create_by, element?.modify_by]);
+        const caseUserMap = await USER_DATA_MAP(caseAuditUsernames);
+
         const list = [];
 
         for (const row of numberRows) {
             const num = row.number;
             const casesForNumber = caseMap.get(num) || [];
 
-            const caseDetails = [];
-            for (const element of casesForNumber) {
-                const create_by_data = await USER_DATA(element?.create_by);
-                const modify_by_data = await USER_DATA(element?.modify_by);
-
-                const create_by = {
-                    username: create_by_data?.username,
-                    name: create_by_data?.name,
-                    mobile: create_by_data?.mobile,
-                    email: create_by_data?.email,
-                    status: create_by_data?.status == "1"
-                };
-
-                const modify_by = {
-                    username: modify_by_data?.username,
-                    name: modify_by_data?.name,
-                    mobile: modify_by_data?.mobile,
-                    email: modify_by_data?.email,
-                    status: modify_by_data?.status == "1"
-                };
-
-                caseDetails.push({
-                    case_id: element?.case_id,
-                    status: element?.status == "0",
-                    name: element?.name,
-                    remark: element?.remark,
-                    create_date: element?.create_date,
-                    create_by,
-                    modify_date: element?.modify_date,
-                    modify_by
-                });
-            }
+            const caseDetails = casesForNumber.map((element) => ({
+                case_id: element?.case_id,
+                status: element?.status == "0",
+                name: element?.name,
+                remark: element?.remark,
+                create_date: element?.create_date,
+                create_by: auditUserRecord(caseUserMap.get(element?.create_by) || {}, { includeUsername: true }),
+                modify_date: element?.modify_date,
+                modify_by: auditUserRecord(caseUserMap.get(element?.modify_by) || {}, { includeUsername: true }),
+            }));
 
             list.push({
                 number: num,

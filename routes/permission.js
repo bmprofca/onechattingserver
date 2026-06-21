@@ -1,77 +1,114 @@
 import express from "express";
 import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
-import { RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
+import { RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 
 const router = express.Router();
 
-const PermissionOptions = async (permission_id) => {
-    const [row] = await pool.query("SELECT * FROM `permission_options` WHERE permission_id = ?", [permission_id]);
-    const object = {
-        contact_create: false,
-        contact_edit: false,
-        contact_delete: false,
-        contact_view: false,
-        all_chat_view: false,
-        template_create: false,
-        template_edit: false,
-        template_delete: false,
-        broadcast_access: false,
-        setting_access: false,
-        chat_assign_access: false,
-    };
-    row.forEach(element => {
+const PERMISSION_FIELD_MAP = {
+    "create contact": "contact_create",
+    "edit contact": "contact_edit",
+    "delete contact": "contact_delete",
+    "view contact": "contact_view",
+    "view all chat": "all_chat_view",
+    "create template": "template_create",
+    "edit template": "template_edit",
+    "delete template": "template_delete",
+    "broadcast access": "broadcast_access",
+    "setting access": "setting_access",
+    "chat assign access": "chat_assign_access",
+};
+
+const emptyPermissionOptions = () => ({
+    contact_create: false,
+    contact_edit: false,
+    contact_delete: false,
+    contact_view: false,
+    all_chat_view: false,
+    template_create: false,
+    template_edit: false,
+    template_delete: false,
+    broadcast_access: false,
+    setting_access: false,
+    chat_assign_access: false,
+});
+
+function buildPermissionOptionsFromRows(rows = []) {
+    const object = emptyPermissionOptions();
+
+    rows.forEach((element) => {
         const permission = element.permission;
-        const status = element.status == '1' ? true : false;
-        if (permission == 'create contact') {
-            if (status) {
-                object.contact_create = true;
-            }
-        } else if (permission == 'edit contact') {
-            if (status) {
-                object.contact_edit = true;
-            }
-        } else if (permission == 'delete contact') {
-            if (status) {
-                object.contact_delete = true;
-            }
-        } else if (permission == 'view contact') {
-            if (status) {
-                object.contact_view = true;
-            }
-        } else if (permission == 'view all chat') {
-            if (status) {
-                object.all_chat_view = true;
-            }
-        } else if (permission == 'create template') {
-            if (status) {
-                object.template_create = true;
-            }
-        } else if (permission == 'edit template') {
-            if (status) {
-                object.template_edit = true;
-            }
-        } else if (permission == 'delete template') {
-            if (status) {
-                object.template_delete = true;
-            }
-        } else if (permission == 'broadcast access') {
-            if (status) {
-                object.broadcast_access = true;
-            }
-        } else if (permission == 'setting access') {
-            if (status) {
-                object.setting_access = true;
-            }
-        } else if (permission == 'chat assign access') {
-            if (status) {
-                object.chat_assign_access = true;
-            }
+        const status = element.status == "1";
+        const key = PERMISSION_FIELD_MAP[permission];
+        if (key && status) {
+            object[key] = true;
         }
     });
 
     return object;
+}
+
+const PermissionOptions = async (permission_id) => {
+    const [row] = await pool.query("SELECT permission, status FROM `permission_options` WHERE permission_id = ?", [permission_id]);
+    return buildPermissionOptionsFromRows(row);
+};
+
+async function permissionOptionsMap(permissionIds = []) {
+    const uniqueIds = [...new Set(permissionIds.filter(Boolean))];
+    const map = new Map(uniqueIds.map((id) => [id, emptyPermissionOptions()]));
+
+    if (uniqueIds.length === 0) {
+        return map;
+    }
+
+    const [rows] = await pool.query(
+        "SELECT permission_id, permission, status FROM permission_options WHERE permission_id IN (?)",
+        [uniqueIds]
+    );
+
+    const grouped = new Map();
+    for (const row of rows) {
+        if (!grouped.has(row.permission_id)) {
+            grouped.set(row.permission_id, []);
+        }
+        grouped.get(row.permission_id).push(row);
+    }
+
+    for (const [permissionId, permissionRows] of grouped) {
+        map.set(permissionId, buildPermissionOptionsFromRows(permissionRows));
+    }
+
+    return map;
+}
+
+async function projectMappingTypeMap(project_id, usernames = []) {
+    const unique = [...new Set(usernames.filter(Boolean))];
+    const map = new Map();
+
+    if (unique.length === 0) {
+        return map;
+    }
+
+    const [rows] = await pool.query(
+        "SELECT username, type FROM project_mapping WHERE project_id = ? AND username IN (?)",
+        [project_id, unique]
+    );
+
+    for (const row of rows) {
+        map.set(row.username, row.type);
+    }
+
+    return map;
+}
+
+function buildAuditUser(userMap, username, mappingTypeMap) {
+    const user = userMap.get(username) || {};
+    return {
+        name: user?.name,
+        mobile: user?.mobile,
+        type: mappingTypeMap.get(username),
+    };
 }
 
 router.post("/create", auth, async (req, res) => {
@@ -107,7 +144,7 @@ router.post("/create", auth, async (req, res) => {
 
         const user_data = await USER_DATA(username);
 
-        const [project_mapping] = await pool.query("SELECT * FROM project_mapping WHERE project_id = ? AND username = ?", [project_id, username]);
+        const [project_mapping] = await pool.query("SELECT type FROM project_mapping WHERE project_id = ? AND username = ? LIMIT 1", [project_id, username]);
 
         res.json({
             msg: 'Permission created successfully',
@@ -164,7 +201,7 @@ router.post("/edit", auth, async (req, res) => {
         return res.status(200).json({ error: 'User is not assigned on the project' })
     }
 
-    const [check_row] = await pool.query("SELECT * FROM permission_list WHERE permission_id = ?", [permission_id]);
+    const [check_row] = await pool.query("SELECT permission_id FROM permission_list WHERE permission_id = ? LIMIT 1", [permission_id]);
 
     if (check_row.length == 0) {
         return res.status(200).json({ error: 'Permission not found' })
@@ -173,35 +210,24 @@ router.post("/edit", auth, async (req, res) => {
     try {
         await pool.query("UPDATE `permission_list` SET `name`=?,`modify_date`=?,`modify_by`=?,`remark`=? WHERE permission_id = ?", [name, TIMESTAMP(), username, remark, permission_id]);
 
-        const [agent_count_row] = await pool.query("SELECT * FROM project_mapping WHERE permission_id = ? AND is_deleted = ?", [permission_id, '0']);
+        const [[agent_count_row]] = await pool.query("SELECT COUNT(*) AS total FROM project_mapping WHERE permission_id = ? AND is_deleted = ?", [permission_id, '0']);
 
-        const [new_data] = await pool.query("SELECT * FROM permission_list WHERE permission_id = ?", [permission_id]);
-
-        const create_by_data = await USER_DATA(new_data[0]?.create_by);
-        const modify_by_data = await USER_DATA(new_data[0]?.modify_by);
-
-        const [project_mapping1] = await pool.query("SELECT * FROM project_mapping WHERE project_id = ? AND username = ?", [project_id, new_data[0]?.create_by]);
-        const [project_mapping2] = await pool.query("SELECT * FROM project_mapping WHERE project_id = ? AND username = ?", [project_id, new_data[0]?.modify_by]);
+        const [new_data] = await pool.query("SELECT * FROM permission_list WHERE permission_id = ? LIMIT 1", [permission_id]);
+        const permissionRow = new_data[0];
+        const userMap = await USER_DATA_MAP([permissionRow?.create_by, permissionRow?.modify_by]);
+        const mappingTypeMap = await projectMappingTypeMap(project_id, [permissionRow?.create_by, permissionRow?.modify_by]);
 
         res.json({
             msg: 'Permission edited successfully',
             data: {
-                permission_id: new_data[0]?.permission_id,
-                name: new_data[0]?.name,
-                remark: new_data[0]?.remark,
-                agent_count: agent_count_row.length,
-                create_date: TIMESTAMP(),
-                modify_date: TIMESTAMP(),
-                create_by: {
-                    name: create_by_data?.name,
-                    mobile: create_by_data?.mobile,
-                    type: project_mapping1[0]?.type,
-                },
-                modify_by: {
-                    name: modify_by_data?.name,
-                    mobile: modify_by_data?.mobile,
-                    type: project_mapping2[0]?.type,
-                }
+                permission_id: permissionRow?.permission_id,
+                name: permissionRow?.name,
+                remark: permissionRow?.remark,
+                agent_count: Number(agent_count_row?.total || 0),
+                create_date: permissionRow?.create_date,
+                modify_date: permissionRow?.modify_date,
+                create_by: buildAuditUser(userMap, permissionRow?.create_by, mappingTypeMap),
+                modify_by: buildAuditUser(userMap, permissionRow?.modify_by, mappingTypeMap),
             }
         });
 
@@ -232,48 +258,34 @@ router.post("/list", auth, async (req, res) => {
 
     const [row] = await pool.query("SELECT * FROM permission_list WHERE project_id = ? ORDER BY id DESC", [project_id]);
 
-    const res_data = [];
+    if (row.length === 0) {
+        return res.status(200).json({ data: [], count: 0, msg: 'Permission list fetched successfully' });
+    }
 
-    for (let index = 0; index < row.length; index++) {
-        const element = row[index];
+    const permissionIds = row.map((element) => element.permission_id);
+    const auditUsernames = row.flatMap((element) => [element.create_by, element.modify_by]);
 
+    const [agentCountRows] = await pool.query(
+        "SELECT permission_id, COUNT(*) AS agent_count FROM project_mapping WHERE project_id = ? AND is_deleted = ? AND permission_id IN (?) GROUP BY permission_id",
+        [project_id, "0", permissionIds]
+    );
+    const agentCountMap = new Map(agentCountRows.map((item) => [item.permission_id, Number(item.agent_count)]));
 
-        const permission_id = element?.permission_id;
+    const userMap = await USER_DATA_MAP(auditUsernames);
+    const mappingTypeMap = await projectMappingTypeMap(project_id, auditUsernames);
+    const permissionsMap = await permissionOptionsMap(permissionIds);
 
-        const [agent_count_row] = await pool.query("SELECT * FROM project_mapping WHERE permission_id = ? AND is_deleted = ?", [permission_id, '0']);
-
-        const create_by_data = await USER_DATA(element?.create_by);
-        const modify_by_data = await USER_DATA(element?.modify_by);
-
-
-        const [project_mapping1] = await pool.query("SELECT * FROM project_mapping WHERE project_id = ? AND username = ?", [project_id, element?.create_by]);
-        const [project_mapping2] = await pool.query("SELECT * FROM project_mapping WHERE project_id = ? AND username = ?", [project_id, element?.modify_by]);
-
-
-        const permissions = await PermissionOptions(element?.permission_id);
-
-        var object = {
-            permission_id: element?.permission_id,
-            name: element?.name,
-            remark: element?.remark,
-            agent_count: agent_count_row.length,
-            create_date: TIMESTAMP(),
-            modify_date: TIMESTAMP(),
-            create_by: {
-                name: create_by_data?.name,
-                mobile: create_by_data?.mobile,
-                type: project_mapping1[0]?.type,
-            },
-            modify_by: {
-                name: modify_by_data?.name,
-                mobile: modify_by_data?.mobile,
-                type: project_mapping2[0]?.type,
-            },
-            permissions
-        };
-
-        res_data.push(object)
-    };
+    const res_data = row.map((element) => ({
+        permission_id: element?.permission_id,
+        name: element?.name,
+        remark: element?.remark,
+        agent_count: agentCountMap.get(element.permission_id) || 0,
+        create_date: element?.create_date,
+        modify_date: element?.modify_date,
+        create_by: buildAuditUser(userMap, element?.create_by, mappingTypeMap),
+        modify_by: buildAuditUser(userMap, element?.modify_by, mappingTypeMap),
+        permissions: permissionsMap.get(element.permission_id) || emptyPermissionOptions(),
+    }));
 
     return res.status(200).json({ data: res_data, count: res_data.length, msg: 'Permission list fetched successfully' })
 
@@ -281,9 +293,9 @@ router.post("/list", auth, async (req, res) => {
 
 
 const UpdateStatus = async (permission_id, permission, status) => {
-    const [check_row] = await pool.query("SELECT * FROM permission_options WHERE permission_id = ?  AND permission = ?", [permission_id, permission, status]);
+    const [check_row] = await pool.query("SELECT id FROM permission_options WHERE permission_id = ? AND permission = ? LIMIT 1", [permission_id, permission]);
     if (check_row.length > 0) {
-        await pool.query("UPDATE `permission_options` SET `status`= ? WHERE permission_id = ?  AND permission = ?", [status, permission_id, permission]);
+        await pool.query("UPDATE `permission_options` SET `status`= ? WHERE permission_id = ? AND permission = ?", [status, permission_id, permission]);
     } else {
         await pool.query("INSERT INTO `permission_options`(`permission_id`, `permission`, `status`) VALUES (?,?,?)", [permission_id, permission, status]);
     }
@@ -340,18 +352,47 @@ router.post("/set-access", auth, async (req, res) => {
         return res.status(200).json({ error: 'User is not assigned on the project' })
     }
 
-    await UpdateStatus(permission_id, "create contact", contact_create == true ? '1' : '0');
-    await UpdateStatus(permission_id, "edit contact", contact_edit == true ? '1' : '0');
-    await UpdateStatus(permission_id, "delete contact", contact_delete == true ? '1' : '0');
-    await UpdateStatus(permission_id, "view contact", contact_view == true ? '1' : '0');
-    await UpdateStatus(permission_id, "create template", template_create == true ? '1' : '0');
-    await UpdateStatus(permission_id, "edit template", template_edit == true ? '1' : '0');
-    await UpdateStatus(permission_id, "delete template", template_delete == true ? '1' : '0');
-    await UpdateStatus(permission_id, "view all chat", all_chat_view == true ? '1' : '0');
-    await UpdateStatus(permission_id, "broadcast access", broadcast_access == true ? '1' : '0');
-    await UpdateStatus(permission_id, "setting access", setting_access == true ? '1' : '0');
-    await UpdateStatus(permission_id, "chat assign access", chat_assign_access == true ? '1' : '0');
+    const permissionUpdates = [
+        ["create contact", contact_create == true ? '1' : '0'],
+        ["edit contact", contact_edit == true ? '1' : '0'],
+        ["delete contact", contact_delete == true ? '1' : '0'],
+        ["view contact", contact_view == true ? '1' : '0'],
+        ["create template", template_create == true ? '1' : '0'],
+        ["edit template", template_edit == true ? '1' : '0'],
+        ["delete template", template_delete == true ? '1' : '0'],
+        ["view all chat", all_chat_view == true ? '1' : '0'],
+        ["broadcast access", broadcast_access == true ? '1' : '0'],
+        ["setting access", setting_access == true ? '1' : '0'],
+        ["chat assign access", chat_assign_access == true ? '1' : '0'],
+    ];
 
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        for (const [permission, status] of permissionUpdates) {
+            const [check_row] = await connection.query(
+                "SELECT id FROM permission_options WHERE permission_id = ? AND permission = ? LIMIT 1",
+                [permission_id, permission]
+            );
+            if (check_row.length > 0) {
+                await connection.query(
+                    "UPDATE `permission_options` SET `status`= ? WHERE permission_id = ? AND permission = ?",
+                    [status, permission_id, permission]
+                );
+            } else {
+                await connection.query(
+                    "INSERT INTO `permission_options`(`permission_id`, `permission`, `status`) VALUES (?,?,?)",
+                    [permission_id, permission, status]
+                );
+            }
+        }
+        await connection.commit();
+    } catch (error) {
+        await connection.rollback();
+        return res.status(200).json({ error: 'Failed to set permission access', e: error?.message || error });
+    } finally {
+        connection.release();
+    }
 
     return res.status(200).json({
         msg: 'Permission set successfully'

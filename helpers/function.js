@@ -37,19 +37,42 @@ const FUTURE_TIMESTAMP = (minutes = 3) => {
 };
 
 
+const AISENSY_TOKEN_CACHE_TTL_MS = Number(process.env.AISENSY_TOKEN_CACHE_TTL_MS) || 10 * 60 * 1000;
+const PROJECT_DATA_CACHE_TTL_MS = Number(process.env.PROJECT_DATA_CACHE_TTL_MS) || 5 * 60 * 1000;
+const aisensyTokenCache = new Map();
+const projectDataCache = new Map();
+
+function getCacheEntry(cache, key) {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (entry.expires <= Date.now()) {
+        cache.delete(key);
+        return null;
+    }
+    return entry.value;
+}
+
+function setCacheEntry(cache, key, value, ttlMs) {
+    cache.set(key, { value, expires: Date.now() + ttlMs });
+}
+
 const GetAiSensyProjectToken = async (projectid) => {
+    const cached = getCacheEntry(aisensyTokenCache, projectid);
+    if (cached !== null) {
+        return cached;
+    }
+
     const [rows] = await pool.query(
-        "SELECT token FROM aisensy_token WHERE project_id = ?",
+        "SELECT token FROM aisensy_token WHERE project_id = ? LIMIT 1",
         [projectid]
     );
 
-    if (rows.length == 1) {
-        const data = rows[0];
-        return data.token;
-    } else {
-        return false;
+    const token = rows.length === 1 ? rows[0].token : false;
+    if (token) {
+        setCacheEntry(aisensyTokenCache, projectid, token, AISENSY_TOKEN_CACHE_TTL_MS);
     }
-}
+    return token;
+};
 
 
 function GENERATE_PASSWORD(length = 8) {
@@ -84,13 +107,18 @@ function IS_STRONG_PASSWORD(password) {
 
 
 async function AISENSY_PROJECT_DATA(project_id) {
-    const [row] = await pool.query("SELECT * FROM aisensy_projects WHERE project_id = ?", [project_id]);
-
-    if (row.length == 1) {
-        return row[0];
-    } else {
-        return false;
+    const cached = getCacheEntry(projectDataCache, project_id);
+    if (cached !== null) {
+        return cached;
     }
+
+    const [row] = await pool.query("SELECT * FROM aisensy_projects WHERE project_id = ? LIMIT 1", [project_id]);
+
+    const data = row.length === 1 ? row[0] : false;
+    if (data) {
+        setCacheEntry(projectDataCache, project_id, data, PROJECT_DATA_CACHE_TTL_MS);
+    }
+    return data;
 }
 
 async function SAVE_MEDIA(projectid, mediaId, folderPath) {
@@ -202,6 +230,35 @@ async function USER_DATA(username = '') {
     }
 }
 
+async function USER_DATA_MAP(usernames = []) {
+    const unique = [...new Set(usernames.filter(Boolean))];
+    if (unique.length === 0) {
+        return new Map();
+    }
+
+    const [rows] = await pool.query(
+        "SELECT * FROM users WHERE username IN (?)",
+        [unique]
+    );
+
+    return new Map(rows.map((row) => [row.username, row]));
+}
+
+function auditUserRecord(user = {}, { includeUsername = false } = {}) {
+    const record = {
+        name: user?.name,
+        mobile: user?.mobile,
+        email: user?.email,
+        status: user?.status === "1",
+    };
+
+    if (includeUsername) {
+        record.username = user?.username;
+    }
+
+    return record;
+}
+
 async function GET_BALANCE(project_id = '') {
 
     const [username_row] = await pool.query("SELECT * FROM `project_mapping` WHERE project_id = ? AND type = ?", [project_id, 'admin']);
@@ -276,14 +333,19 @@ const TODAY_DATE = () =>
     new Date().toLocaleDateString("sv-SE", { timeZone: IST_TIMEZONE });
 
 const GET_PROJECT_BILLING_STATUS = async (project_id = '') => {
-    const [row] = await pool.query("SELECT * FROM user_package WHERE project_id = ? AND start_date <= ? AND end_date >= ?", [project_id, TODAY_DATE(), TODAY_DATE()]);
+    const [row] = await pool.query("SELECT id FROM user_package WHERE project_id = ? AND start_date <= ? AND end_date >= ? LIMIT 1", [project_id, TODAY_DATE(), TODAY_DATE()]);
 
-    if (row.length > 0) {
-        return true;
-    } else {
-        return false;
-    }
-}
+    return row.length > 0;
+};
+
+const GET_ACTIVE_BILLING_PROJECT_IDS = async (today = TODAY_DATE()) => {
+    const [rows] = await pool.query(
+        "SELECT DISTINCT project_id FROM user_package WHERE start_date <= ? AND end_date >= ?",
+        [today, today]
+    );
+
+    return new Set(rows.map((row) => row.project_id));
+};
 
 /**
  * Validate Cloudflare Turnstile token from client.
@@ -327,6 +389,8 @@ export {
     SAVE_MEDIA,
     MOVE_MEDIA,
     USER_DATA,
+    USER_DATA_MAP,
+    auditUserRecord,
     GET_BALANCE,
     GET_ADMIN_OF_PROJECT,
     GENERATE_EMAIL_ADDRESS,
@@ -334,5 +398,6 @@ export {
     GET_BALANCE_BY_USERNAME,
     GET_PROJECTS_OF_USER,
     GET_PROJECT_BILLING_STATUS,
+    GET_ACTIVE_BILLING_PROJECT_IDS,
     validateTurnstileToken
 };
