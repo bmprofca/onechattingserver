@@ -1,7 +1,4 @@
 import express from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import axios from "axios";
 import pool from "../db.js";
 import { developerMessageAuth, developerSendMessageAuth } from "../middleware/developerAuth.js";
@@ -17,7 +14,6 @@ import {
     TIMESTAMP,
     USER_DATA,
 } from "../helpers/function.js";
-import { BASE_DOMAIN } from "../helpers/Config.js";
 import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "../helpers/socketEmit.js";
 import {
@@ -26,11 +22,9 @@ import {
     loadTemplateFromDb,
     parseMessageComponent,
 } from "../helpers/templateStorage.js";
+import { normalizeAuthenticationSendComponents } from "../helpers/authenticationTemplate.js";
 
 const router = express.Router();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 function resolveProjectContext(req, res) {
     const project_id = req.developerMapping?.project_id;
@@ -1282,11 +1276,16 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
     const { project_id, username } = ctx;
     const number = req.body?.number;
     const template_id = req.body?.template_id;
-    const component = req.body?.component;
+    const rawComponent = req.body?.component;
     const { is_reply, reply_wamid, is_reply_value } = parseReplyFields(req.body);
 
-    if (!number || !template_id || !component) {
+    if (!number || !template_id || rawComponent == null) {
         return res.status(400).json({ error: "Provide all mandatory fields" });
+    }
+
+    let component = parseMessageComponent(rawComponent);
+    if (!component.length) {
+        return res.status(400).json({ error: "Invalid component format; expected array of template components" });
     }
 
     const replyError = validateReplyInput(is_reply, reply_wamid);
@@ -1307,6 +1306,15 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
     const template_name = template_data?.template_name;
     const language_code = template_data?.language_code;
     const category = template_data?.category;
+    const storedTemplate = await loadTemplateFromDb(project_id, template_id);
+
+    if (category === "AUTHENTICATION") {
+        const authSend = normalizeAuthenticationSendComponents(component, storedTemplate);
+        if (!authSend.valid) {
+            return res.status(400).json({ error: authSend.error });
+        }
+        component = authSend.component;
+    }
 
     const BALANCE = await GET_BALANCE(project_id);
     const project_data = await AISENSY_PROJECT_DATA(project_id);
@@ -1391,8 +1399,13 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
                 new_data[0]?.message_by,
             ]);
 
-            const storedTemplate = await loadTemplateFromDb(project_id, template_id);
             const templateJson = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
+            const displayMessage = buildTemplateDisplayMessage(templateJson, component);
+
+            await pool.query("UPDATE `messages` SET `message` = ? WHERE `unique_id` = ?", [
+                displayMessage,
+                unique_id,
+            ]);
 
             const return_message = {
                 message_id: new_data[0]?.unique_id,
@@ -1400,7 +1413,7 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
                 create_date: new_data[0]?.create_date,
                 type: new_data[0]?.type,
                 message_type: new_data[0]?.message_type,
-                message: buildTemplateDisplayMessage(templateJson, component),
+                message: displayMessage,
                 is_template: true,
                 is_forwarded: false,
                 is_reply,

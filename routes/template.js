@@ -10,116 +10,11 @@ import {
     processTemplateMediaForStorage,
     serializeTemplateJson,
 } from "../helpers/templateStorage.js";
+import {
+    validateAuthenticationTemplate,
+} from "../helpers/authenticationTemplate.js";
 
 const router = express.Router();
-
-function normalizeAuthenticationTemplate(template) {
-    const bodySource = template.components?.find(c => c.type === 'BODY') || {};
-    const footerSource = template.components?.find(c => c.type === 'FOOTER');
-    const buttonsSource = template.components?.find(c => c.type === 'BUTTONS');
-    const otpBtn = buttonsSource?.buttons?.find(
-        b => b.type === 'OTP' || b.type === 'otp' || b.otp_type
-    ) || {};
-
-    const otpType = String(otpBtn.otp_type || 'COPY_CODE').toUpperCase();
-    const normalizedOtp = {
-        type: 'OTP',
-        otp_type: otpType,
-    };
-
-    if (otpType === 'COPY_CODE' && otpBtn.text) {
-        normalizedOtp.text = String(otpBtn.text).trim();
-    }
-    if ((otpType === 'ONE_TAP' || otpType === 'ZERO_TAP') && Array.isArray(otpBtn.supported_apps)) {
-        normalizedOtp.supported_apps = otpBtn.supported_apps;
-    }
-
-    const components = [];
-    const body = { type: 'BODY' };
-
-    if (bodySource.add_security_recommendation) {
-        body.add_security_recommendation = true;
-    }
-    components.push(body);
-
-    if (footerSource?.code_expiration_minutes != null) {
-        const minutes = Number(footerSource.code_expiration_minutes);
-        if (minutes >= 1 && minutes <= 90) {
-            components.push({
-                type: 'FOOTER',
-                code_expiration_minutes: minutes,
-            });
-        }
-    }
-
-    components.push({
-        type: 'BUTTONS',
-        buttons: [normalizedOtp],
-    });
-
-    return {
-        name: template.name,
-        language: template.language,
-        category: 'AUTHENTICATION',
-        components,
-    };
-}
-
-function validateAuthenticationTemplate(template) {
-    if (template?.category !== 'AUTHENTICATION') {
-        return { valid: true, template };
-    }
-
-    if (!Array.isArray(template.components) || template.components.length === 0) {
-        return { valid: false, error: 'Authentication template requires components' };
-    }
-
-    if (template.components.some(c => c.type === 'HEADER')) {
-        return { valid: false, error: 'Authentication templates cannot include a HEADER component' };
-    }
-
-    if (!template.components.some(c => c.type === 'BODY')) {
-        return { valid: false, error: 'Authentication template requires a BODY component' };
-    }
-
-    const bodyComponent = template.components.find(c => c.type === 'BODY');
-    const bodyText = String(bodyComponent?.text || '').trim();
-
-    if (bodyText) {
-        return { valid: false, error: 'Authentication templates use a predefined message format and cannot include custom body text' };
-    }
-
-    if (bodyComponent?.example?.body_text?.length) {
-        return { valid: false, error: 'Authentication templates cannot include custom body variable samples' };
-    }
-
-    const footerComponent = template.components.find(c => c.type === 'FOOTER');
-    if (footerComponent?.text) {
-        return { valid: false, error: 'Authentication templates cannot include custom footer text; use code expiration instead' };
-    }
-    if (footerComponent?.code_expiration_minutes != null) {
-        const minutes = Number(footerComponent.code_expiration_minutes);
-        if (!Number.isFinite(minutes) || minutes < 1 || minutes > 90) {
-            return { valid: false, error: 'Code expiration must be between 1 and 90 minutes' };
-        }
-    }
-
-    const buttonsComponent = template.components.find(c => c.type === 'BUTTONS');
-    const otpButtons = (buttonsComponent?.buttons || []).filter(
-        b => b.type === 'OTP' || b.type === 'otp' || b.otp_type
-    );
-
-    if (otpButtons.length !== 1) {
-        return { valid: false, error: 'Authentication template must have exactly one OTP button' };
-    }
-
-    const otpType = String(otpButtons[0].otp_type || 'COPY_CODE').toUpperCase();
-    if (otpType === 'COPY_CODE' && !String(otpButtons[0].text || '').trim()) {
-        return { valid: false, error: 'Copy Code button label is required' };
-    }
-
-    return { valid: true, template: normalizeAuthenticationTemplate(template) };
-}
 
 // CHAT LIST
 
