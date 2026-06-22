@@ -9,10 +9,10 @@ function getTokenFromHeader(req) {
 
 function getCachedDeveloperAuth(token) {
     const entry = developerAuthCache.get(token);
-    if (!entry) return null;
+    if (!entry) return undefined;
     if (entry.expires <= Date.now()) {
         developerAuthCache.delete(token);
-        return null;
+        return undefined;
     }
     return entry.value;
 }
