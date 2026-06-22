@@ -1,0 +1,35 @@
+{
+  "name": "medihelp1",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": " MediHelp Service: Ambulance services are now at ur finger"
+    },
+    {
+      "type": "BODY",
+      "text": "* 📍 **Available Everywhere in Assam*:* No matter where you are, our services will reach you.\n * ⏱️ **Lightning-Fast Response*:* After booking, an ambulance will arrive at your doorstep within 30 minutes (or even less).\n * 📱 **Easy Booking Process*:* Book a vehicle quickly and effortlessly through our user-friendly app.\n * 🩺 **Emergency Support*:* Our ambulances are equipped with necessary medical tools and operated by skilled drivers."
+    },
+    {
+      "type": "FOOTER",
+      "text": "Download our app today"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Download App Now",
+          "url": "https://play.google.com/store/apps/details?id=com.ujudebug.medihelp.ambulance"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "916001758696"
+        }
+      ]
+    }
+  ]
+}

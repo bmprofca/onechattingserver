@@ -1,0 +1,31 @@
+{
+  "name": "bihu",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "\"সকলোলৈকে ৰঙালী বিহুৰ হিয়াভৰা শুভেচ্ছা জ্ঞাপন কৰিলোঁ।\""
+    },
+    {
+      "type": "BODY",
+      "text": "নমস্কাৰ!\n🚑 *MediHelp Service*: এম্বুলেন্স সেৱা এতিয়া আপোনাৰ হাতৰ মুঠিত!\nবিপদৰ সময়ত আপোনাৰ আৰু আপোনাৰ পৰিয়ালৰ কাষত থিয় হ’বলৈ MediHelp Service সদায় সাজু। এই বিহুৰ বতৰতো আপুনি অসমৰ যিকোনো প্ৰান্তৰ পৰা মাত্ৰ এটা ক্লিকতে এম্বুলেন্স বুক কৰিব পাৰিব।\nআমাৰ সেৱাৰ বিশেষত্বসমূহ:\n* 📍 অসমৰ সকলোতে উপলব্ধ।\n* ⏱️ বুকিঙৰ ৩০ মিনিটৰ ভিতৰত দ্ৰুত সেৱা।\n* 📱 এপৰ জৰিয়তে অতি সহজ বুকিং প্ৰক্ৰিয়া।\n* 🩺 দক্ষ চালক আৰু প্ৰয়োজনীয় সঁজুলি।\nবিপদৰ সময়ত পলম নকৰিব! আজি আমাৰ এপটো ডাউনলোড কৰি থওক যাতে প্ৰয়োজনৰ সময়ত আপুনি সহায় লাভ কৰিব পাৰে।"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Click Here to Download ",
+          "url": "https://play.google.com/store/apps/details?id=com.ujudebug.medihelp.ambulance"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "916001758696"
+        }
+      ]
+    }
+  ]
+}

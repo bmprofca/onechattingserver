@@ -1,0 +1,24 @@
+{
+  "name": "chat_start_3",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Click the start button to start conversation."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Start"
+        }
+      ]
+    },
+    {
+      "type": "FOOTER",
+      "text": "OOMS"
+    }
+  ]
+}

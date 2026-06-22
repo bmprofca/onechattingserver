@@ -1,0 +1,28 @@
+{
+  "name": "tax_file",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "*Thanks for Being Part of Bmtax !!!*\nDear *{{1}}*,\n\nPlease file your ITR with with in Due date to Avoide late fee.\n\nThanx and Regads\nBmtax",
+      "example": {
+        "body_text": [
+          [
+            "Ali"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "ui_update",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "New ui has been updated in our onesaas version {{1}}  has released",
+      "example": {
+        "body_text": [
+          [
+            "onesaas"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "test"
+    }
+  ]
+}

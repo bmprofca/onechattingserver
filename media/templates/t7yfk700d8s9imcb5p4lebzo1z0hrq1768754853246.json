@@ -1,0 +1,20 @@
+{
+  "name": "login_details",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\nYour username is *{{2}}* and password is *{{3}}*\n\nPlease use it for login.",
+      "example": {
+        "body_text": [
+          [
+            "Sourav",
+            "sourav1111",
+            "SJe8@973a.WOW0"
+          ]
+        ]
+      }
+    }
+  ]
+}

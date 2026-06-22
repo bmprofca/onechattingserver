@@ -1,0 +1,34 @@
+{
+  "name": "finaltest",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Welcome to our new 1SaaS"
+    },
+    {
+      "type": "BODY",
+      "text": "Hey Dear user,\nWe are launching new *software* for you, it will make easier to manage laead and chat with your customer. We hope you will love it. Please share your feedback with us"
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thank you"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Feedback"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "919864972356"
+        }
+      ]
+    }
+  ]
+}

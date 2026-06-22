@@ -1,0 +1,20 @@
+{
+  "name": "document_send",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "DOCUMENT",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/x5oinnn2polzuxksmtldoe0413kw9r1761754581612.pdf"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Document"
+    }
+  ]
+}

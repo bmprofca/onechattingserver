@@ -1,0 +1,37 @@
+{
+  "name": "documents_share",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "DOCUMENT",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/bdik8m2472v8e57fmu0q1y12114cywu0j7ip3m08wr1.pdf"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*, \n\nPlease find attached.\n\nThanks & Regards \nTeam *Bmtax*",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

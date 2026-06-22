@@ -1,0 +1,37 @@
+{
+  "name": "itr_filling",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Thanks for Being with Us!!!"
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*\n\nKindly file your ITR with in *{{2}}* to avoide late fee.\n\nThanks and Regards\nTeam *Bmtax*\n",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "Tax File"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Visit : www.bmtaxopc.com"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Interested"
+        }
+      ]
+    }
+  ]
+}

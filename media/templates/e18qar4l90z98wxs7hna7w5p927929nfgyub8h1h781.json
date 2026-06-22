@@ -1,0 +1,37 @@
+{
+  "name": "documents",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "DOCUMENT",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/kl95u9x7h6up9107561rp8vgr3unzowm9q1w0k28g5l.pdf"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nPlease find attached",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

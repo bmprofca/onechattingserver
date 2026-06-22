@@ -4,6 +4,13 @@ import { fileTypeFromBuffer } from "file-type";
 import { TURNSTILE_SECRET_KEY } from "./Config.js";
 import fs from "fs";
 import path from "path";
+import {
+    getChatMediaKeyPrefix,
+    getChatMediaUrl,
+    getContentTypeFromExtension,
+    isB2Enabled,
+    uploadChatMedia,
+} from "./b2Storage.js";
 
 const RANDOM_STRING = (length = 10) => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -153,16 +160,15 @@ async function SAVE_MEDIA(projectid, mediaId, folderPath) {
         return false;
     }
 
-    if (!fs.existsSync(folderPath)) {
-        fs.mkdirSync(folderPath, { recursive: true });
-    }
-
     const filename = `${RANDOM_STRING(15)}.${type.ext}`;
-    const filePath = path.join(folderPath, filename);
 
-    await fs.promises.writeFile(filePath, buffer);
-
-    return filename;
+    try {
+        await uploadChatMedia(folderPath, filename, buffer, type.mime);
+        return filename;
+    } catch (error) {
+        console.log(`❌ B2 upload failed: projectid=${projectid}, mediaId=${mediaId}`, error.message);
+        return false;
+    }
 }
 
 async function MOVE_MEDIA(fileUrl, folderPath) {
@@ -191,8 +197,25 @@ async function MOVE_MEDIA(fileUrl, folderPath) {
     ];
 
     try {
+        let buffer;
+        let ext;
+
         const urlParts = new URL(fileUrl);
-        let ext = path.extname(urlParts.pathname).toLowerCase().replace(".", "");
+        ext = path.extname(urlParts.pathname).toLowerCase().replace(".", "");
+
+        const response = await axios.get(fileUrl, {
+            responseType: "arraybuffer",
+            timeout: 60000,
+            maxRedirects: 10,
+        });
+        buffer = Buffer.from(response.data);
+
+        if (!ext || !allowedExtensions.includes(ext)) {
+            const type = await fileTypeFromBuffer(buffer);
+            if (type?.ext && allowedExtensions.includes(type.ext)) {
+                ext = type.ext;
+            }
+        }
 
         if (!ext || !allowedExtensions.includes(ext)) {
             console.error("❌ Invalid or unsupported media URL:", fileUrl);
@@ -201,18 +224,7 @@ async function MOVE_MEDIA(fileUrl, folderPath) {
 
         const fileName = RANDOM_STRING(30) + "." + ext;
 
-        if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true });
-        }
-
-        const filePath = path.join(folderPath, fileName);
-
-        const response = await axios.get(fileUrl, {
-            responseType: "arraybuffer",
-        });
-
-        await fs.promises.writeFile(filePath, response.data);
-
+        await uploadChatMedia(folderPath, fileName, buffer, getContentTypeFromExtension(ext));
         return fileName;
     } catch (err) {
         console.error("❌ Error in MOVE_MEDIA:", err.message);
@@ -388,6 +400,9 @@ export {
     AISENSY_PROJECT_DATA,
     SAVE_MEDIA,
     MOVE_MEDIA,
+    getChatMediaUrl as GET_CHAT_MEDIA_URL,
+    getChatMediaKeyPrefix as GET_CHAT_MEDIA_KEY_PREFIX,
+    isB2Enabled as IS_B2_ENABLED,
     USER_DATA,
     USER_DATA_MAP,
     auditUserRecord,

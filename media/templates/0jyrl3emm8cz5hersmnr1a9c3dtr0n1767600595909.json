@@ -1,0 +1,36 @@
+{
+  "name": "testmessage",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Test Header For Test"
+    },
+    {
+      "type": "BODY",
+      "text": "Hey Dear {{1}}\nPlease let me know the issue.",
+      "example": {
+        "body_text": [
+          [
+            "Fardin"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thanks"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Button"
+        }
+      ]
+    }
+  ]
+}

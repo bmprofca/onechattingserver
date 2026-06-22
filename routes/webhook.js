@@ -1,7 +1,7 @@
 import express from "express";
 const router = express.Router();
 import pool from "../db.js";
-import { AISENSY_PROJECT_DATA, GET_ADMIN_OF_PROJECT, GetAiSensyProjectToken, RANDOM_STRING, SAVE_MEDIA, TIMESTAMP } from "../helpers/function.js";
+import { AISENSY_PROJECT_DATA, GET_ADMIN_OF_PROJECT, GetAiSensyProjectToken, GET_CHAT_MEDIA_KEY_PREFIX, GET_CHAT_MEDIA_URL, RANDOM_STRING, SAVE_MEDIA, TIMESTAMP } from "../helpers/function.js";
 import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "../helpers/socketEmit.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
@@ -10,6 +10,12 @@ import axios from "axios";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+    buildTemplateDisplayMessage,
+    expandTemplateMediaUrls,
+    loadTemplateFromDb,
+    parseMessageComponent,
+} from "../helpers/templateStorage.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -310,7 +316,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     );
                 } else if (messageType === "image") {
                     const sender = message?.from;
-                    const folder_path = `media/chat/${project_id}/${sender}/image`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, sender, 'image');
                     const media_id = message?.image?.id;
 
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
@@ -327,7 +333,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     }
                 } else if (messageType === "video") {
                     const sender = message?.from;
-                    const folder_path = `media/chat/${project_id}/${sender}/video`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, sender, 'video');
                     const media_id = message?.video?.id;
 
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
@@ -344,7 +350,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     }
                 } else if (messageType === "document") {
                     const sender = message?.from;
-                    const folder_path = `media/chat/${project_id}/${sender}/document`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, sender, 'document');
                     const media_id = message?.document?.id;
 
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
@@ -363,7 +369,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     }
                 } else if (messageType === "audio") {
                     const sender = message?.from;
-                    const folder_path = `media/chat/${project_id}/${sender}/audio`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, sender, 'audio');
                     const media_id = message?.audio?.id;
 
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
@@ -471,19 +477,19 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     if (status === "failed") object.failed_reason = failed_reason;
 
                     if (message_type === "image") {
-                        object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/image/${file_path}`;
+                        object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'image', file_path);
                         object.media_name = file_name;
                     }
                     if (message_type === "document") {
-                        object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/document/${file_path}`;
+                        object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'document', file_path);
                         object.media_name = file_name;
                     }
                     if (message_type === "video") {
-                        object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/video/${file_path}`;
+                        object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'video', file_path);
                         object.media_name = file_name;
                     }
                     if (message_type === "audio") {
-                        object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/audio/${file_path}`;
+                        object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'audio', file_path);
                         object.media_name = file_name;
                         object.is_voice = is_voice;
                     }
@@ -548,19 +554,19 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                                 if (reply_element.status === "failed") reply_object.failed_reason = reply_element.failed_reason;
 
                                 if (reply_element.message_type === "image") {
-                                    reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/image/${reply_element.file_path}`;
+                                    reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'image', reply_element.file_path);
                                     reply_object.media_name = reply_element.file_name;
                                 }
                                 if (reply_element.message_type === "document") {
-                                    reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/document/${reply_element.file_path}`;
+                                    reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'document', reply_element.file_path);
                                     reply_object.media_name = reply_element.file_name;
                                 }
                                 if (reply_element.message_type === "video") {
-                                    reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/video/${reply_element.file_path}`;
+                                    reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'video', reply_element.file_path);
                                     reply_object.media_name = reply_element.file_name;
                                 }
                                 if (reply_element.message_type === "audio") {
-                                    reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/audio/${reply_element.file_path}`;
+                                    reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'audio', reply_element.file_path);
                                     reply_object.media_name = reply_element.file_name;
                                     reply_object.is_voice = reply_element.is_voice == "1";
                                 }
@@ -572,10 +578,16 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                                 }
 
                                 if (reply_element.message_type === "template") {
-                                    const tplFile = path.join(__dirname, "../media/templates/" + reply_element.template_id + ".json");
-                                    const reply_template = fs.existsSync(tplFile) ? JSON.parse(fs.readFileSync(tplFile, "utf8")) : {};
+                                    const reply_stored = await loadTemplateFromDb(project_id, reply_element.template_id);
+                                    const reply_template = await expandTemplateMediaUrls(project_id, reply_element.template_id, reply_stored);
+                                    const replyParsedComponent = parseMessageComponent(reply_element.component);
+
                                     reply_object.template = reply_template;
-                                    if (reply_element.component) reply_object.component = JSON.parse(reply_element.component);
+                                    reply_object.component = replyParsedComponent;
+
+                                    if (!reply_element.message || !String(reply_element.message).trim()) {
+                                        reply_object.message = buildTemplateDisplayMessage(reply_template, replyParsedComponent);
+                                    }
                                 }
 
                                 object.reply_to_message = reply_object;
@@ -647,16 +659,16 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     } : { username: admin_username, name: null, mobile: null, email: null, status: false },
                 };
                 if (el.message_type === "image") {
-                    return_message.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${recipient}/image/${el.file_path}`;
+                    return_message.media_url = await GET_CHAT_MEDIA_URL(project_id, recipient, 'image', el.file_path);
                     return_message.media_name = el.file_name;
                 } else if (el.message_type === "video") {
-                    return_message.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${recipient}/video/${el.file_path}`;
+                    return_message.media_url = await GET_CHAT_MEDIA_URL(project_id, recipient, 'video', el.file_path);
                     return_message.media_name = el.file_name;
                 } else if (el.message_type === "document") {
-                    return_message.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${recipient}/document/${el.file_path}`;
+                    return_message.media_url = await GET_CHAT_MEDIA_URL(project_id, recipient, 'document', el.file_path);
                     return_message.media_name = el.file_name;
                 } else if (el.message_type === "audio") {
-                    return_message.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${recipient}/audio/${el.file_path}`;
+                    return_message.media_url = await GET_CHAT_MEDIA_URL(project_id, recipient, 'audio', el.file_path);
                     return_message.media_name = el.file_name;
                     return_message.is_voice = el.is_voice == "1";
                 }
@@ -698,7 +710,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     }
                     didProcess = true;
                 } else if (messageType === "image") {
-                    const folder_path = `media/chat/${project_id}/${recipient}/image`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, recipient, 'image');
                     const media_id = message?.image?.id;
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
 
@@ -722,7 +734,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         didProcess = true;
                     }
                 } else if (messageType === "video") {
-                    const folder_path = `media/chat/${project_id}/${recipient}/video`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, recipient, 'video');
                     const media_id = message?.video?.id;
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
 
@@ -746,7 +758,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         didProcess = true;
                     }
                 } else if (messageType === "document") {
-                    const folder_path = `media/chat/${project_id}/${recipient}/document`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, recipient, 'document');
                     const media_id = message?.document?.id;
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
 
@@ -771,7 +783,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         didProcess = true;
                     }
                 } else if (messageType === "audio") {
-                    const folder_path = `media/chat/${project_id}/${recipient}/audio`;
+                    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, recipient, 'audio');
                     const media_id = message?.audio?.id;
                     const file_path = await SAVE_MEDIA(project_id, media_id, folder_path);
 

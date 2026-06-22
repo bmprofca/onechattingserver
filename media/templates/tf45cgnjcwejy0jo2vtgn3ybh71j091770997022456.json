@@ -1,0 +1,30 @@
+{
+  "name": "payment_confirmation",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nThank you for paying Rs. *{{2}}* to Bmtax, Received by *{{3}}*. \n\nThanks & Regards\nTeam Bmtax",
+      "example": {
+        "body_text": [
+          [
+            "Ganguli",
+            "3000",
+            "Sirajuk"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

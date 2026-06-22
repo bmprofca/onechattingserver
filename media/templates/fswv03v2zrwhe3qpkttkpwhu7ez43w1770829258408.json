@@ -1,0 +1,20 @@
+{
+  "name": "start_chat",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Please click start button to chat with us"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Start"
+        }
+      ]
+    }
+  ]
+}

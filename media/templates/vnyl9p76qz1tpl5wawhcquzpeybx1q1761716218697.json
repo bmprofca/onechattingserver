@@ -1,0 +1,34 @@
+{
+  "name": "image_call",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/dbi1h77vf9mxb2s4rxgwdy72stm4171761715855244.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Hey this is our new logo. We are launching our new product for more info cont us"
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thank you"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call",
+          "phone_number": "+919864972356"
+        }
+      ]
+    }
+  ]
+}

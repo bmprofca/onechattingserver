@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# User uploads and runtime media
-media/
-
 # Environment and secrets
 .env
 .env.*

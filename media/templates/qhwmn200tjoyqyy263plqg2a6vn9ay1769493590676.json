@@ -1,0 +1,22 @@
+{
+  "name": "sdfsdfsd",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "This is a test messag for var {{1}} ji",
+      "example": {
+        "body_text": [
+          [
+            "fardin"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thanks"
+    }
+  ]
+}

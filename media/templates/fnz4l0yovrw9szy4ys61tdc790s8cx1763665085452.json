@@ -1,0 +1,34 @@
+{
+  "name": "task",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/d4vx31ka4m0294lldka2tsg5ekp6yj1763665005385.png"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "I Love My India"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Me",
+          "phone_number": "917002695990"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Interested"
+        }
+      ]
+    }
+  ]
+}

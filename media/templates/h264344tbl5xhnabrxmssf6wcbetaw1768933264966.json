@@ -1,0 +1,28 @@
+{
+  "name": "marketing",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Thank you for paying Rs. {{1}} to Bmtax.",
+      "example": {
+        "body_text": [
+          [
+            "123456"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "task_create",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Task Create "
+    },
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\nYour Task for GST Registration has been Created Successfully!",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak Ali"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "www.bmtaxopc.com"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

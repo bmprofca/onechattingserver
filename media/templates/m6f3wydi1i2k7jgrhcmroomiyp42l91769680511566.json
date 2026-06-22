@@ -1,0 +1,30 @@
+{
+  "name": "task_complete",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nWe are very happy to inform you that your task *{{2}}* , was complited successfully. Complited by *{{3}}*. \n\nThanks & Regards\nTeam* Bmtax*",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST Registration",
+            "Sirajul"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "919957873316"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "summer_sales",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "30% of in our new cloths"
+    },
+    {
+      "type": "BODY",
+      "text": "Hey ! Hope You are doing well. Revisit our site to get latest offer upto {{1}} off",
+      "example": {
+        "body_text": [
+          [
+            "40%"
+          ]
+        ]
+      }
+    }
+  ]
+}

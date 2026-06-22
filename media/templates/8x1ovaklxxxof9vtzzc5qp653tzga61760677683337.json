@@ -1,0 +1,27 @@
+{
+  "name": "good_morning_with_name",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear, *{{1}}*,\nWish you a very good morning.",
+      "example": {
+        "body_text": [
+          [
+            "SOURAV"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Good Morning"
+        }
+      ]
+    }
+  ]
+}

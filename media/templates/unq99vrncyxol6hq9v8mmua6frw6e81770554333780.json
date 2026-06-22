@@ -1,0 +1,19 @@
+{
+  "name": "document",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nKindly Submit your documents to Complete your {{2}} with in due date.\n\nThanks & Regards\nTeam Bmtax ",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST Return"
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "without_variable_text",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "this is header text"
+    },
+    {
+      "type": "BODY",
+      "text": "This is the main body content"
+    },
+    {
+      "type": "FOOTER",
+      "text": "this is footer"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "reply us"
+        }
+      ]
+    }
+  ]
+}

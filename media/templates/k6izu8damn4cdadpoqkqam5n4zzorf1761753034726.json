@@ -1,0 +1,42 @@
+{
+  "name": "payment_reminder",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/zm6pea2qbuj45011oeoxjgfyw2yuo51761752949267.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\nKindly Clear your due of Rs. {{2}} to Bmtax.",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "123"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "www.bmtax.in"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

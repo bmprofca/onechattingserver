@@ -1,0 +1,28 @@
+{
+  "name": "task_create",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/ff319f73tx47dbmo5wl77n71i17027xcth8jy3xz6e4.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nYour Task for {{2}} was created successfully.",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST"
+          ]
+        ]
+      }
+    }
+  ]
+}

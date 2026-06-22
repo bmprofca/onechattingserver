@@ -1,0 +1,33 @@
+{
+  "name": "image_test",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/325yy88r0sqp8p2ggi6wj2ktp3xt5u1761716795593.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "This is our new logo, please share your feedback."
+    },
+    {
+      "type": "FOOTER",
+      "text": "thank you"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Color should be change"
+        }
+      ]
+    }
+  ]
+}

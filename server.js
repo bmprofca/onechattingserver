@@ -3,7 +3,6 @@ import express from "express";
 import cors from "cors";
 import messagesRouter from "./routes/messages.js";
 import webhookRouter, { startWebhookQueueDaemon } from "./routes/webhook.js";
-import uploadRouter from "./routes/upload.js";
 import accountRouter from "./routes/account.js";
 import contactRouter from "./routes/contact.js";
 import projectRouter from "./routes/project.js";
@@ -22,6 +21,7 @@ import fs from "fs";
 import mime from "mime";
 import { fileURLToPath } from "url";
 import http from "http";
+import { isB2Enabled, initB2Storage, getB2PublicBaseUrl } from "./helpers/b2Storage.js";
 import { setupSocketIO } from "./helpers/Socket.js";
 import { startCronJobs } from "./routes/cron.js";
 import planRouter from "./routes/plan.js";
@@ -47,7 +47,6 @@ app.use(
 );
 app.use("/message", messagesRouter);
 app.use("/webhook", webhookRouter);
-app.use("/upload", uploadRouter);
 app.use("/account", accountRouter);
 app.use("/contact", contactRouter);
 app.use("/project", projectRouter);
@@ -68,50 +67,6 @@ app.use("/developer", developerRouter);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-app.get("/upload/:filename", (req, res) => {
-    const filePath = path.join(path.join(__dirname, "/media/upload/temp"), req.params.filename);
-
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-    }
-
-    const type = mime.getType(filePath);
-
-    if (type && type.startsWith("video")) {
-        const stat = fs.statSync(filePath);
-        const fileSize = stat.size;
-        const range = req.headers.range;
-
-        if (range) {
-            const parts = range.replace(/bytes=/, "").split("-");
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-            const chunkSize = end - start + 1;
-            const file = fs.createReadStream(filePath, { start, end });
-
-            res.writeHead(206, {
-                "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-                "Accept-Ranges": "bytes",
-                "Content-Length": chunkSize,
-                "Content-Type": type
-            });
-
-            file.pipe(res);
-        } else {
-            res.writeHead(200, {
-                "Content-Length": fileSize,
-                "Content-Type": type
-            });
-            fs.createReadStream(filePath).pipe(res);
-        }
-    } else {
-        res.setHeader("Content-Type", type || "application/octet-stream");
-        res.setHeader("Content-Disposition", "inline");
-        fs.createReadStream(filePath).pipe(res);
-    }
-});
 
 app.get("/export/:filename", (req, res) => {
     const filePath = path.join(path.join(__dirname, "/media/export"), req.params.filename);
@@ -172,6 +127,7 @@ app.get("/error/:filename", (req, res) => {
     }
 });
 
+// Legacy local chat media (pre-B2 messages only)
 app.use("/chat-media", express.static(path.join(process.cwd(), "/media/chat")));
 
 
@@ -193,8 +149,20 @@ if (process.env.GENERATE_DB_SUMMARY === "true") {
 }
 
 const PORT = 6540;
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Server running on port ${PORT}`);
+
+    if (isB2Enabled()) {
+        try {
+            await initB2Storage();
+            console.log(`📦 Chat media storage: Backblaze B2 (${process.env.B2_BUCKET})`);
+            console.log(`   Public URL base: ${getB2PublicBaseUrl()}`);
+        } catch (error) {
+            console.error(`⚠️  B2 initialization failed: ${error.message}`);
+        }
+    } else {
+        console.log("⚠️  B2 not configured — chat media uploads will fail until B2 env vars are set");
+    }
 
     startCronJobs();
     startWebhookQueueDaemon({

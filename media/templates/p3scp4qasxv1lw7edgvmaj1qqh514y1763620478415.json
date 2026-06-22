@@ -1,0 +1,41 @@
+{
+  "name": "testevent",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "HI thi is the header"
+    },
+    {
+      "type": "BODY",
+      "text": "This is our main body content with full message, You will get a payout in your bank account within {{1}} hours. Please give us feedback and soon a new even will launch.",
+      "example": {
+        "body_text": [
+          [
+            "1200"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "text"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Quick reply button"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call us",
+          "phone_number": "919864972356"
+        }
+      ]
+    }
+  ]
+}

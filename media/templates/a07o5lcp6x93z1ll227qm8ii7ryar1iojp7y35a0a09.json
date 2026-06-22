@@ -1,0 +1,45 @@
+{
+  "name": "app_logo_name_update_user",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/06f774073c0kbvmv593e9e85g192wj1zjbc470dh597.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nWe are happy to inform you that the logo, name, and commission slab of our application have been updated.\n\n*New Commission Slab:*\nJio – {{2}}%\nAirtel – {{3}}%\nVi – {{4}}%\nBSNL – {{5}}%\n\nThank you. 😊",
+      "example": {
+        "body_text": [
+          [
+            "Tamizuddin Ahmed",
+            "1.05",
+            "1.05",
+            "3.5",
+            "3.5"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Team - Recharge Point"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Update Now",
+          "url": "https://play.google.com/store/apps/details?id=in.recharge.rechargepoint&hl=en_IN"
+        }
+      ]
+    }
+  ]
+}

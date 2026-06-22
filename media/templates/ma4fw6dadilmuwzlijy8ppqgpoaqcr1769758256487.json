@@ -1,0 +1,29 @@
+{
+  "name": "task_create",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nYour Task for {{2}} is Created Successfully. \n\nThanks & regards\nTeam Bmtax",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

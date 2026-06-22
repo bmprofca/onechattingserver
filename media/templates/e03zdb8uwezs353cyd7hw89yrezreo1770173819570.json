@@ -1,0 +1,19 @@
+{
+  "name": "payment_reminder",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nKindly clear your due of Rs. {{2}} to Bmtax.\n\nThanks & Regards\nTeam Bmtax",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "2000"
+          ]
+        ]
+      }
+    }
+  ]
+}

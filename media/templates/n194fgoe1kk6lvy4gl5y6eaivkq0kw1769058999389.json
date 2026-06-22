@@ -1,0 +1,18 @@
+{
+  "name": "task_reminder",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nKindly Share your documents to complete your Income Tax Return.\n\nThanx and Regsrds\nBmtax",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    }
+  ]
+}

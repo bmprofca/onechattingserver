@@ -10,6 +10,8 @@ import {
     AISENSY_PROJECT_DATA,
     GET_BALANCE,
     GetAiSensyProjectToken,
+    GET_CHAT_MEDIA_KEY_PREFIX,
+    GET_CHAT_MEDIA_URL,
     MOVE_MEDIA,
     RANDOM_STRING,
     TIMESTAMP,
@@ -18,6 +20,12 @@ import {
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "../helpers/socketEmit.js";
+import {
+    buildTemplateDisplayMessage,
+    expandTemplateMediaUrls,
+    loadTemplateFromDb,
+    parseMessageComponent,
+} from "../helpers/templateStorage.js";
 
 const router = express.Router();
 
@@ -436,19 +444,19 @@ router.get("/chat-history", developerMessageAuth, async (req, res) => {
             }
 
             if (message_type == "image") {
-                object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/image/${file_path}`;
+                object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'image', file_path);
                 object.media_name = file_name;
             }
             if (message_type == "document") {
-                object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/document/${file_path}`;
+                object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'document', file_path);
                 object.media_name = file_name;
             }
             if (message_type == "video") {
-                object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/video/${file_path}`;
+                object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'video', file_path);
                 object.media_name = file_name;
             }
             if (message_type == "audio") {
-                object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${number}/audio/${file_path}`;
+                object.media_url = await GET_CHAT_MEDIA_URL(project_id, number, 'audio', file_path);
                 object.media_name = file_name;
                 object.is_voice = is_voice;
             }
@@ -460,18 +468,16 @@ router.get("/chat-history", developerMessageAuth, async (req, res) => {
             }
 
             if (message_type == "template") {
-                const template =
-                    (fs.existsSync(path.join(__dirname, "../media/templates/" + template_id + ".json")) &&
-                        JSON.parse(
-                            fs.readFileSync(
-                                path.join(__dirname, "../media/templates/" + template_id + ".json"),
-                                "utf8"
-                            )
-                        )) ||
-                    {};
+                const storedTemplate = await loadTemplateFromDb(project_id, template_id);
+                const template = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
+                const parsedComponent = parseMessageComponent(component);
 
                 object.template = template;
-                object.component = JSON.parse(component);
+                object.component = parsedComponent;
+
+                if (!message || !String(message).trim()) {
+                    object.message = buildTemplateDisplayMessage(template, parsedComponent);
+                }
             }
 
             if (is_reply) {
@@ -540,19 +546,19 @@ router.get("/chat-history", developerMessageAuth, async (req, res) => {
                         }
 
                         if (reply_element.message_type == "image") {
-                            reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/image/${reply_element.file_path}`;
+                            reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'image', reply_element.file_path);
                             reply_object.media_name = reply_element.file_name;
                         }
                         if (reply_element.message_type == "document") {
-                            reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/document/${reply_element.file_path}`;
+                            reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'document', reply_element.file_path);
                             reply_object.media_name = reply_element.file_name;
                         }
                         if (reply_element.message_type == "video") {
-                            reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/video/${reply_element.file_path}`;
+                            reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'video', reply_element.file_path);
                             reply_object.media_name = reply_element.file_name;
                         }
                         if (reply_element.message_type == "audio") {
-                            reply_object.media_url = `${BASE_DOMAIN}/chat-media/${project_id}/${reply_number}/audio/${reply_element.file_path}`;
+                            reply_object.media_url = await GET_CHAT_MEDIA_URL(project_id, reply_number, 'audio', reply_element.file_path);
                             reply_object.media_name = reply_element.file_name;
                             reply_object.is_voice = reply_is_voice;
                         }
@@ -564,26 +570,15 @@ router.get("/chat-history", developerMessageAuth, async (req, res) => {
                         }
 
                         if (reply_element.message_type == "template") {
-                            const reply_template =
-                                (fs.existsSync(
-                                    path.join(
-                                        __dirname,
-                                        "../media/templates/" + reply_element.template_id + ".json"
-                                    )
-                                ) &&
-                                    JSON.parse(
-                                        fs.readFileSync(
-                                            path.join(
-                                                __dirname,
-                                                "../media/templates/" + reply_element.template_id + ".json"
-                                            ),
-                                            "utf8"
-                                        )
-                                    )) ||
-                                {};
+                            const reply_stored = await loadTemplateFromDb(project_id, reply_element.template_id);
+                            const reply_template = await expandTemplateMediaUrls(project_id, reply_element.template_id, reply_stored);
+                            const replyParsedComponent = parseMessageComponent(reply_element.component);
+
                             reply_object.template = reply_template;
-                            if (reply_element.component) {
-                                reply_object.component = JSON.parse(reply_element.component);
+                            reply_object.component = replyParsedComponent;
+
+                            if (!reply_element.message || !String(reply_element.message).trim()) {
+                                reply_object.message = buildTemplateDisplayMessage(reply_template, replyParsedComponent);
                             }
                         }
 
@@ -822,11 +817,13 @@ router.post("/send-image-message", developerSendMessageAuth, async (req, res) =>
         return res.status(400).json({ error: checks.error });
     }
 
-    const folder_path = `./media/chat/${project_id}/${number}/image`;
+    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, number, 'image');
     const file_path = await MOVE_MEDIA(image_link, folder_path);
     if (!file_path) {
         return res.status(400).json({ error: "Failed to retrieve image" });
     }
+
+    const media_link = await GET_CHAT_MEDIA_URL(project_id, number, 'image', file_path);
 
     const unique_id = RANDOM_STRING(30);
     let connection;
@@ -867,7 +864,7 @@ router.post("/send-image-message", developerSendMessageAuth, async (req, res) =>
                     {
                         to: number,
                         type: "image",
-                        image: { caption: message, link: image_link },
+                        image: { caption: message, link: media_link },
                     },
                     is_reply,
                     reply_wamid
@@ -902,7 +899,7 @@ router.post("/send-image-message", developerSendMessageAuth, async (req, res) =>
             type: "out",
             message_type: "image",
             id: new_data?.id,
-            media_url: `${BASE_DOMAIN}/chat-media/${project_id}/${number}/image/${file_path}`,
+            media_url: await GET_CHAT_MEDIA_URL(project_id, number, 'image', file_path),
             media_name: new_data?.file_name,
             send_by: formatSendBy(send_by_row[0]),
         };
@@ -950,11 +947,13 @@ router.post("/send-video-message", developerSendMessageAuth, async (req, res) =>
         return res.status(400).json({ error: checks.error });
     }
 
-    const folder_path = `./media/chat/${project_id}/${number}/video`;
+    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, number, 'video');
     const file_path = await MOVE_MEDIA(video_link, folder_path);
     if (!file_path) {
         return res.status(400).json({ error: "Failed to retrieve video" });
     }
+
+    const media_link = await GET_CHAT_MEDIA_URL(project_id, number, 'video', file_path);
 
     const unique_id = RANDOM_STRING(30);
     let connection;
@@ -995,7 +994,7 @@ router.post("/send-video-message", developerSendMessageAuth, async (req, res) =>
                     {
                         to: number,
                         type: "video",
-                        video: { caption: message, link: video_link },
+                        video: { caption: message, link: media_link },
                     },
                     is_reply,
                     reply_wamid
@@ -1030,7 +1029,7 @@ router.post("/send-video-message", developerSendMessageAuth, async (req, res) =>
             type: "out",
             message_type: "video",
             id: new_data?.id,
-            media_url: `${BASE_DOMAIN}/chat-media/${project_id}/${number}/video/${file_path}`,
+            media_url: await GET_CHAT_MEDIA_URL(project_id, number, 'video', file_path),
             media_name: new_data?.file_name,
             send_by: formatSendBy(send_by_row[0]),
         };
@@ -1084,11 +1083,13 @@ router.post("/send-document-message", developerSendMessageAuth, async (req, res)
         return res.status(403).json({ error: assignment.error });
     }
 
-    const folder_path = `./media/chat/${project_id}/${number}/document`;
+    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, number, 'document');
     const file_path = await MOVE_MEDIA(document_link, folder_path);
     if (!file_path) {
         return res.status(400).json({ error: "Failed to retrieve document" });
     }
+
+    const media_link = await GET_CHAT_MEDIA_URL(project_id, number, 'document', file_path);
 
     const unique_id = RANDOM_STRING(30);
     await pool.query(
@@ -1121,7 +1122,7 @@ router.post("/send-document-message", developerSendMessageAuth, async (req, res)
                     type: "document",
                     document: {
                         caption: message,
-                        link: document_link,
+                        link: media_link,
                         filename: document_name,
                     },
                 },
@@ -1152,7 +1153,7 @@ router.post("/send-document-message", developerSendMessageAuth, async (req, res)
             type: "out",
             message_type: "document",
             id: new_data?.id,
-            media_url: `${BASE_DOMAIN}/chat-media/${project_id}/${number}/document/${file_path}`,
+            media_url: await GET_CHAT_MEDIA_URL(project_id, number, 'document', file_path),
             media_name: new_data?.file_name,
             send_by: formatSendBy(send_by_row[0]),
         };
@@ -1194,11 +1195,13 @@ router.post("/send-audio-message", developerSendMessageAuth, async (req, res) =>
         return res.status(403).json({ error: assignment.error });
     }
 
-    const folder_path = `./media/chat/${project_id}/${number}/audio`;
+    const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, number, 'audio');
     const file_path = await MOVE_MEDIA(audio_link, folder_path);
     if (!file_path) {
         return res.status(400).json({ error: "Failed to retrieve audio" });
     }
+
+    const media_link = await GET_CHAT_MEDIA_URL(project_id, number, 'audio', file_path);
 
     const unique_id = RANDOM_STRING(30);
     await pool.query(
@@ -1229,7 +1232,7 @@ router.post("/send-audio-message", developerSendMessageAuth, async (req, res) =>
                 {
                     to: number,
                     type: "audio",
-                    audio: { link: audio_link },
+                    audio: { link: media_link },
                 },
                 is_reply,
                 reply_wamid
@@ -1258,7 +1261,7 @@ router.post("/send-audio-message", developerSendMessageAuth, async (req, res) =>
             type: "out",
             message_type: "audio",
             id: new_data?.id,
-            media_url: `${BASE_DOMAIN}/chat-media/${project_id}/${number}/audio/${file_path}`,
+            media_url: await GET_CHAT_MEDIA_URL(project_id, number, 'audio', file_path),
             media_name: new_data?.file_name,
             is_voice: new_data?.is_voice == "1",
             send_by: formatSendBy(send_by_row[0]),
@@ -1388,12 +1391,8 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
                 new_data[0]?.message_by,
             ]);
 
-            const templateJson =
-                (fs.existsSync(path.join(__dirname, "../media/templates/" + template_id + ".json")) &&
-                    JSON.parse(
-                        fs.readFileSync(path.join(__dirname, "../media/templates/" + template_id + ".json"), "utf8")
-                    )) ||
-                {};
+            const storedTemplate = await loadTemplateFromDb(project_id, template_id);
+            const templateJson = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
 
             const return_message = {
                 message_id: new_data[0]?.unique_id,
@@ -1401,7 +1400,7 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
                 create_date: new_data[0]?.create_date,
                 type: new_data[0]?.type,
                 message_type: new_data[0]?.message_type,
-                message: null,
+                message: buildTemplateDisplayMessage(templateJson, component),
                 is_template: true,
                 is_forwarded: false,
                 is_reply,

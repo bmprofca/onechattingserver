@@ -1,0 +1,27 @@
+{
+  "name": "documents",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "DOCUMENT",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/rvy180c930uuolm8j1uts204gr3vpd816g37f56y7i0.pdf"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\nPlease find attached",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    }
+  ]
+}

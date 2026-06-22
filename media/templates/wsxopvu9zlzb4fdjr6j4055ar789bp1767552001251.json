@@ -1,0 +1,11 @@
+{
+  "name": "payment",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Kindly Clear you dues as early you can."
+    }
+  ]
+}

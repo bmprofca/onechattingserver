@@ -1,0 +1,20 @@
+{
+  "name": "sample_image",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/v5dqtrpiqu5byndi60vbamwjn6qj6f1769316983466.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Hey,\nCheckout this image"
+    }
+  ]
+}

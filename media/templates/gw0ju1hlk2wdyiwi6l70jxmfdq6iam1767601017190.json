@@ -1,0 +1,36 @@
+{
+  "name": "welcome_message_test",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Welcome to India"
+    },
+    {
+      "type": "BODY",
+      "text": "This is our very nice country.\n{{1}} Please contact us.",
+      "example": {
+        "body_text": [
+          [
+            "Fardin"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "test.com"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Button"
+        }
+      ]
+    }
+  ]
+}

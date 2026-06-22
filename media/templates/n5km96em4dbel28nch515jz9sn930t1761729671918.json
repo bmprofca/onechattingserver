@@ -1,0 +1,39 @@
+{
+  "name": "new_doc",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/2b9ixc2gmzd0iy8nhur3yj3v35fnus1761729556163.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "This is our new logo, please give us some feedback."
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thank you"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Insta",
+          "url": "https://www.instagram.com"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "+919864972356"
+        }
+      ]
+    }
+  ]
+}

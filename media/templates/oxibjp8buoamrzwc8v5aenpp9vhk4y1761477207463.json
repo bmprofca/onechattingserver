@@ -1,0 +1,34 @@
+{
+  "name": "new_year_greetings_2025",
+  "language": "en",
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Happy New Year 2025"
+    },
+    {
+      "type": "BODY",
+      "text": "Hello {{1}},\nWishing you and your family a wonderful and successful new year {{2}}! May this year bring you happiness and prosperity."
+    },
+    {
+      "type": "FOOTER",
+      "text": "Warm regards, OOMS Team"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Visit Website",
+          "url": "https://ooms.in"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Thank You"
+        }
+      ]
+    }
+  ]
+}

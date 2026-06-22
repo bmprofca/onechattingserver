@@ -1,14 +1,12 @@
 import express from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import pool from "../db.js";
 import { developerTemplateAuth } from "../middleware/developerAuth.js";
+import {
+    expandTemplateMediaUrls,
+    parseTemplateJsonFromRow,
+} from "../helpers/templateStorage.js";
 
 const router = express.Router();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 function resolveProjectContext(req, res) {
     const project_id = req.developerProject?.project_id;
@@ -19,14 +17,6 @@ function resolveProjectContext(req, res) {
     }
 
     return { project_id };
-}
-
-function loadTemplateJson(template_id) {
-    const filePath = path.join(__dirname, "../media/templates/" + template_id + ".json");
-    if (fs.existsSync(filePath)) {
-        return JSON.parse(fs.readFileSync(filePath, "utf8"));
-    }
-    return {};
 }
 
 router.get("/template-list", developerTemplateAuth, async (req, res) => {
@@ -56,16 +46,22 @@ router.get("/template-list", developerTemplateAuth, async (req, res) => {
         [project_id, `%${status}%`, "0", limit, offset]
     );
 
-    const res_data = rows.map((element) => ({
-        template_id: element.template_id,
-        waba_template_id: element.waba_template_id,
-        category: element.category,
-        create_date: element.create_date,
-        template_name: element.template_name,
-        status: element.status,
-        reject_reason: element.reject_reason,
-        template: loadTemplateJson(element.template_id),
-    }));
+    const res_data = [];
+    for (const element of rows) {
+        const storedTemplate = parseTemplateJsonFromRow(element, element.template_id);
+        const template = await expandTemplateMediaUrls(project_id, element.template_id, storedTemplate);
+
+        res_data.push({
+            template_id: element.template_id,
+            waba_template_id: element.waba_template_id,
+            category: element.category,
+            create_date: element.create_date,
+            template_name: element.template_name,
+            status: element.status,
+            reject_reason: element.reject_reason,
+            template,
+        });
+    }
 
     return res.status(200).json({
         data: res_data,
@@ -101,6 +97,8 @@ router.get("/template-details", developerTemplateAuth, async (req, res) => {
     }
 
     const data = rows[0];
+    const storedTemplate = parseTemplateJsonFromRow(data, template_id);
+    const template = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
 
     return res.status(200).json({
         data: {
@@ -113,7 +111,7 @@ router.get("/template-details", developerTemplateAuth, async (req, res) => {
             project_id,
             reject_reason: data?.reject_reason,
         },
-        template: loadTemplateJson(data?.template_id),
+        template,
     });
 });
 

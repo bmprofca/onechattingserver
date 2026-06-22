@@ -1,0 +1,25 @@
+{
+  "name": "happy_birthday",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Happy Birthday"
+    },
+    {
+      "type": "BODY",
+      "text": "May your day be filled with smiles, laughter, and all the little moments that make your heart happy. You deserve love, success, and endless happiness—not just today, but every single day. May this new year of your life bring beautiful surprises, good health, and dreams that come true. 💖✨\nHave the most wonderful birthday!"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Thank You"
+        }
+      ]
+    }
+  ]
+}

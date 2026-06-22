@@ -1,0 +1,31 @@
+{
+  "name": "eid_wish",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/2ms3c97ar8o4txt6s12nl161i02p393i70z017c7108.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\nWish you very hapy *Eid Mubarak*",
+      "example": {
+        "body_text": [
+          [
+            "Sourav"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Team OneSaas"
+    }
+  ]
+}

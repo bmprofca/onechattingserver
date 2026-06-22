@@ -1,0 +1,20 @@
+{
+  "name": "start_start",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Click on start button to start the chat with us."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Start"
+        }
+      ]
+    }
+  ]
+}

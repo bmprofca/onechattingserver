@@ -1,0 +1,28 @@
+{
+  "name": "thank_you",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nThank you for being with us.\n\nThanks & Regards\nTeam MediHelp",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "916001758696"
+        }
+      ]
+    }
+  ]
+}

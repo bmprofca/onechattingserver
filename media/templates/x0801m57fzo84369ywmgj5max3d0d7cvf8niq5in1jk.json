@@ -1,0 +1,32 @@
+{
+  "name": "task_create",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/ju18n2n2usn8h00317sh2g35om51651dx81h2kxmv17.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nYour task for *{{2}}* with estimated cost of *Rs. {{3}}* Created Successfully, Created by *{{4}}* due date *{{5}}*.\n\nThanks and Regards \nTeam *{{6}}* \n*Your Compliance Partner*\n",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak Ali",
+            "GST Registration",
+            "3000",
+            "Mubarak Ali",
+            "21-12-2026",
+            "Bmtax"
+          ]
+        ]
+      }
+    }
+  ]
+}

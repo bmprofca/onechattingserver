@@ -1,0 +1,43 @@
+{
+  "name": "task_complete_2",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/o27ne8bhqrzzp1476g2289eg440b68149qk3896l4b2.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nYour task for *{{2}}*  was complited Successfully by *{{3}}*.\n\nThanks and Regards\nTeam *Bmtax*",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GSt",
+            "Raja"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "https://bmtaxopc.com/"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

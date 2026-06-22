@@ -1,0 +1,37 @@
+{
+  "name": "birtday_wish",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/d96vugj1xf64fh8d410msjpj09ps874j3foho9y847m.png"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Happy Birthday, {{1}}!\nThank you for your continued trust and support. Wishing you happiness, growth, and success in the coming year.",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

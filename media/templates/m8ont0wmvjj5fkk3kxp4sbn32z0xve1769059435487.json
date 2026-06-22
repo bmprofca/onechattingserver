@@ -1,0 +1,28 @@
+{
+  "name": "task_completed",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Your Task Completed Successfully. Task Name : {{1}}. Thanx You.  ",
+      "example": {
+        "body_text": [
+          [
+            "It Return"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

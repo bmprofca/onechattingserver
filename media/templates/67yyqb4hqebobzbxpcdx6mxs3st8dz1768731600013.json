@@ -1,0 +1,28 @@
+{
+  "name": "otp",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Your Login otp is {{1}} to Loged in Bmtax.",
+      "example": {
+        "body_text": [
+          [
+            "123456"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

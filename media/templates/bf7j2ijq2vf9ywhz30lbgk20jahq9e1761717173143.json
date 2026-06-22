@@ -1,0 +1,39 @@
+{
+  "name": "doc_test",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "DOCUMENT",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/il9s3yj5ze1z1sypsgwikpj62prbyw1761717005209.pdf"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "This is our new api doc, please go throught it."
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thank you"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Link",
+          "url": "https://developers.cryptoapis.io/v-2.2024-12-12-175/RESTapis/address-latest-utxos/list-confirmed-transactions-by-address-utxos/get"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Now",
+          "phone_number": "+919864972356"
+        }
+      ]
+    }
+  ]
+}

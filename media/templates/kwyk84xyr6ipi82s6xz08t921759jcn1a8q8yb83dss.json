@@ -1,0 +1,30 @@
+{
+  "name": "task_complete",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/ttjr115yj83jj9k74z50up7b331b1ev1v136uwc2bar.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nYour task *{{2}}* was complited sucessfully, complited  by *{{3}}*. \n\nThaks and Regards\nTeam *{{4}}*\n*Your compliance partner*",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST ",
+            "Mubarak",
+            "BmtaxMubarak"
+          ]
+        ]
+      }
+    }
+  ]
+}

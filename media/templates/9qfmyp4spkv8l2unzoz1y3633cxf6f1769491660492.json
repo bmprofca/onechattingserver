@@ -1,0 +1,22 @@
+{
+  "name": "t5e",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": " hj jhjh hjg  gff fgh f  jdfg    fgvdfgd  and {{1}} and ",
+      "example": {
+        "body_text": [
+          [
+            "test"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "fsd"
+    }
+  ]
+}

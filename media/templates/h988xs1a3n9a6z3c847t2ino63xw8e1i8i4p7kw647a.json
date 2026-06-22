@@ -1,0 +1,33 @@
+{
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/jli74ci7kj07228gteh1a2cv3s6x5798181cr8mqavz.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear Sir/Ma'm\nএতিয়া এম্বুলেন্স পাব মাত্ৰ কেইমিনিটমানত!\nআপোনাৰ ম’বাইলত আজিই ডাউনলোড কৰক *Medihelp Service* এপ্প্ আৰু জৰুৰীকালীন সময়ত নিশ্চিন্ত থাকক।\nআমাৰ বিশেষত্বসমূহ:\n* ✅ **দ্ৰুত সেৱা**: মাত্ৰ এটা ক্লিকতে আপোনাৰ ঘৰৰ সন্মুখত এম্বুলেন্স।\n* ✅ **সহজ বুকিং**: ব্যৱহাৰ কৰিবলৈ অতি সহজ আৰু খৰতকীয়া।\n* ✅ **২৪x৭ উপলব্ধ**: দিন হওক বা ৰাতি, আমি সদায় আপোনাৰ সেৱাত হাজিৰ।\n* ✅ **দক্ষ চালক আৰু সহায়ক**: আপোনাৰ সুৰক্ষাই আমাৰ অগ্ৰাধিকাৰ।\n\n*বিপদৰ সময়ত পলম নকৰিব! আজি আমাৰ এপটো ডাউনলোড কৰি থওক যাতে প্ৰয়োজনৰ সময়ত আপুনি ক্ষিপ্ৰতাৰে সেৱা লাভ কৰিব পাৰে।*"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "916001758696"
+        },
+        {
+          "type": "URL",
+          "text": "Download App",
+          "url": "https://play.google.com/store/apps/details?id=com.ujudebug.medihelp.ambulance"
+        }
+      ]
+    }
+  ]
+}

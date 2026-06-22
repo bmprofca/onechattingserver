@@ -1,0 +1,45 @@
+{
+  "name": "itr_2627",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/cx3g0x25poykw9cytay9pzugr5hw2277s9w1y791sgt.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nITR filing for *AY 2026-27* has started.\n\nFile your Income Tax Return on time with expert assistance from us.\n\nFor ITR filing support, please contact us today.\n\nRegards,\nTeam *Bmtax*.\n",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Visit-www.bmtaxopc.com"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Interested"
+        },
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Now",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

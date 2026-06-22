@@ -1,0 +1,23 @@
+{
+  "name": "kajsdghjkasd",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "This is a text {{1}}. nnn mak kui dj  {{2}} okay",
+      "example": {
+        "body_text": [
+          [
+            "test",
+            "test"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thanks"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "old_customer_recovery",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nWe are very happy to inform you that our commission for mobile recharge has increased, Please find the last update on our application. \n\n*Commisssion Slap*\nJio - {{2}}%\nAirtel - {{3}}%\nVi - {{4}}%\nBSNL - {{5}}%",
+      "example": {
+        "body_text": [
+          [
+            "Tamizuddin Ahmed",
+            "1.05",
+            "1.05",
+            "3.5",
+            "3.5"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Thanks"
+    }
+  ]
+}

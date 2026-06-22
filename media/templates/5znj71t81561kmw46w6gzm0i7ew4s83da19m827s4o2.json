@@ -1,0 +1,34 @@
+{
+  "name": "appinfo",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/77o3d1k52j7hrxj26310biqwz39tz8e7n4m54ak5xka.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Please download the application from Play store."
+    },
+    {
+      "type": "FOOTER",
+      "text": "www.medihelpservice.com"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "916001758696"
+        }
+      ]
+    }
+  ]
+}

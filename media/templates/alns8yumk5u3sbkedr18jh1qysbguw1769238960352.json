@@ -1,0 +1,30 @@
+{
+  "name": "tash_create",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nYour Task for {{2}} was Created Successfully, Estimated Service Cost {{3}}. \n\nThanks & Regards\nTeam Bmtax",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak Ali",
+            "GST Registration",
+            "3000"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

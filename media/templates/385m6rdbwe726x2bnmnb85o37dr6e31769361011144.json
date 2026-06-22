@@ -1,0 +1,18 @@
+{
+  "name": "aniversary",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}}, wish you a very Happy Aniversery.",
+      "example": {
+        "body_text": [
+          [
+            "Kalam"
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "test",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "body content for testing this is a just test message fron {{1}} platform for ui update",
+      "example": {
+        "body_text": [
+          [
+            "onesaas"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "test"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "without_var_image",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/k2lx7r0drzg48v3st7ntps0r18z3fl1763696334636.png"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": " this is body"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "reply us"
+        }
+      ]
+    }
+  ]
+}

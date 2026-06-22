@@ -1,0 +1,34 @@
+{
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Oy {{1}},\nTera {{2}} ka payment due hai.\nJaldi payment kr. All the best.",
+      "example": {
+        "body_text": [
+          [
+            "Fardin",
+            "5000"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "Thik Hain"
+        },
+        {
+          "type": "QUICK_REPLY",
+          "text": "Nhi Dunga"
+        }
+      ]
+    },
+    {
+      "type": "FOOTER",
+      "text": "thanks"
+    }
+  ]
+}

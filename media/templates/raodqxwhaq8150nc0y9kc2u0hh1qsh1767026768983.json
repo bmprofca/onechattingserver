@@ -1,0 +1,15 @@
+{
+  "name": "tesinging_against_project",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Hey guys !"
+    },
+    {
+      "type": "FOOTER",
+      "text": "thanks"
+    }
+  ]
+}

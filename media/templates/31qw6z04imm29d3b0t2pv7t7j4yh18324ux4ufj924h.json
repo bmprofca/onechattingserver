@@ -1,0 +1,11 @@
+{
+  "name": "start",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Please Click on Start Button to Start Conversation with Bmtax Team"
+    }
+  ]
+}

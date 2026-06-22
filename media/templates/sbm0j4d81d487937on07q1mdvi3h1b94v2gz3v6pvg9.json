@@ -1,0 +1,41 @@
+{
+  "name": "happy_eid",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/pg5436t0x8hwvv3nse1g16737uuk1p8rdr2rfw4267p.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Hello *{{1}}*,\nOn the occasion of *Eid-ul-Fitr*, we wish you and your family peace, happiness, and prosperity.\n\nOur support team will not available for any assistance related to your account/services.\n\nThank you for being with *Bmtax*.",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "visit https://bmtaxopc.com/"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "payment_reminder",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nKinldy Clear your due of Rs. {{2}} to Bmtax as soon as possible. \n\nThanks & Regards\nTeam Bmtax ",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "2000"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

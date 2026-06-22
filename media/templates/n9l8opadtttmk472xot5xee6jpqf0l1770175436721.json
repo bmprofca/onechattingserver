@@ -1,0 +1,19 @@
+{
+  "name": "task_create",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\n\nYour task for {{2}} was created sucessfully.\n\nTeam Bmtax",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST Registration"
+          ]
+        ]
+      }
+    }
+  ]
+}

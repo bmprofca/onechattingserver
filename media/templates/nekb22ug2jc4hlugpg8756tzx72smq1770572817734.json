@@ -1,0 +1,17 @@
+{
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\nPlease pay your Rs. {{2}} due to us.\n\nThanks,\nOneSaaS",
+      "example": {
+        "body_text": [
+          [
+            "Sourav",
+            "4000"
+          ]
+        ]
+      }
+    }
+  ]
+}

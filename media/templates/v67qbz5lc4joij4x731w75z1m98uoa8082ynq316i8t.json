@@ -1,0 +1,42 @@
+{
+  "name": "payment_rev_2",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/66fty080c51kq9243r8ram3zh7vs481g1ey7u3gic43.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nThank you for paying *Rs.{{2}}* to *Bmtax*. \n\nThanks and Regards\nTeam *Bmtax*\n",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "2000"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "https://bmtaxopc.com/"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

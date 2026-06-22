@@ -1,0 +1,34 @@
+{
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nYour Task for *{{2}}* was Created Successfully, Created by *{{3}}*, Due Date *{{4}},* Estimated Cost *{{5}}*.\n\nThanks & Regards\nTeam *Bmtax*",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "GST",
+            "Siraj",
+            "21-12-2026",
+            "2000"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "916026840554"
+        }
+      ]
+    },
+    {
+      "type": "FOOTER",
+      "text": "www.bmtaxopc.com"
+    }
+  ]
+}

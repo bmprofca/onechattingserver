@@ -1,0 +1,28 @@
+{
+  "name": "payroll",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Dear {{1}},\nPlease provide payroll data",
+      "example": {
+        "body_text": [
+          [
+            "Hardtt Sharma"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call us",
+          "phone_number": "919911721290"
+        }
+      ]
+    }
+  ]
+}

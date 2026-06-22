@@ -1,0 +1,11 @@
+{
+  "name": "wecome",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Welcome to Bmtax"
+    }
+  ]
+}

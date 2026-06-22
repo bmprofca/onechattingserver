@@ -1,0 +1,23 @@
+{
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "To file your IT please visit us by clicking the link below."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Visit",
+          "url": "https://ooms.in"
+        }
+      ]
+    },
+    {
+      "type": "FOOTER",
+      "text": "Best wishes"
+    }
+  ]
+}

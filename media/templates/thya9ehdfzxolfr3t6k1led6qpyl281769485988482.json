@@ -1,0 +1,22 @@
+{
+  "name": "test_single",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Hey, this is a  templete test mssage for single variable. Hey {{1}}, Thanks.",
+      "example": {
+        "body_text": [
+          [
+            "Fardin"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "thanks"
+    }
+  ]
+}

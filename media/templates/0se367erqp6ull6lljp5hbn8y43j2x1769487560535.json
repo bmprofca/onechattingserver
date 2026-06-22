@@ -1,0 +1,23 @@
+{
+  "name": "multi_var_test",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Hey new clothing collection, You can buy {{1}} t shirts in {{2}} price",
+      "example": {
+        "body_text": [
+          [
+            "3",
+            "400"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "thanks"
+    }
+  ]
+}

@@ -3,16 +3,123 @@ import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
 import { GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
 import axios from "axios";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { Decrypt } from "../helpers/Decrypt.js";
+import {
+    expandTemplateMediaUrls,
+    parseTemplateJsonFromRow,
+    processTemplateMediaForStorage,
+    serializeTemplateJson,
+} from "../helpers/templateStorage.js";
 
 const router = express.Router();
 
+function normalizeAuthenticationTemplate(template) {
+    const bodySource = template.components?.find(c => c.type === 'BODY') || {};
+    const footerSource = template.components?.find(c => c.type === 'FOOTER');
+    const buttonsSource = template.components?.find(c => c.type === 'BUTTONS');
+    const otpBtn = buttonsSource?.buttons?.find(
+        b => b.type === 'OTP' || b.type === 'otp' || b.otp_type
+    ) || {};
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+    const otpType = String(otpBtn.otp_type || 'COPY_CODE').toUpperCase();
+    const normalizedOtp = {
+        type: 'OTP',
+        otp_type: otpType,
+    };
+
+    if (otpType === 'COPY_CODE' && otpBtn.text) {
+        normalizedOtp.text = String(otpBtn.text).trim();
+    }
+    if ((otpType === 'ONE_TAP' || otpType === 'ZERO_TAP') && Array.isArray(otpBtn.supported_apps)) {
+        normalizedOtp.supported_apps = otpBtn.supported_apps;
+    }
+
+    const components = [];
+    const body = { type: 'BODY' };
+
+    if (bodySource.add_security_recommendation) {
+        body.add_security_recommendation = true;
+    }
+    components.push(body);
+
+    if (footerSource?.code_expiration_minutes != null) {
+        const minutes = Number(footerSource.code_expiration_minutes);
+        if (minutes >= 1 && minutes <= 90) {
+            components.push({
+                type: 'FOOTER',
+                code_expiration_minutes: minutes,
+            });
+        }
+    }
+
+    components.push({
+        type: 'BUTTONS',
+        buttons: [normalizedOtp],
+    });
+
+    return {
+        name: template.name,
+        language: template.language,
+        category: 'AUTHENTICATION',
+        components,
+    };
+}
+
+function validateAuthenticationTemplate(template) {
+    if (template?.category !== 'AUTHENTICATION') {
+        return { valid: true, template };
+    }
+
+    if (!Array.isArray(template.components) || template.components.length === 0) {
+        return { valid: false, error: 'Authentication template requires components' };
+    }
+
+    if (template.components.some(c => c.type === 'HEADER')) {
+        return { valid: false, error: 'Authentication templates cannot include a HEADER component' };
+    }
+
+    if (!template.components.some(c => c.type === 'BODY')) {
+        return { valid: false, error: 'Authentication template requires a BODY component' };
+    }
+
+    const bodyComponent = template.components.find(c => c.type === 'BODY');
+    const bodyText = String(bodyComponent?.text || '').trim();
+
+    if (bodyText) {
+        return { valid: false, error: 'Authentication templates use a predefined message format and cannot include custom body text' };
+    }
+
+    if (bodyComponent?.example?.body_text?.length) {
+        return { valid: false, error: 'Authentication templates cannot include custom body variable samples' };
+    }
+
+    const footerComponent = template.components.find(c => c.type === 'FOOTER');
+    if (footerComponent?.text) {
+        return { valid: false, error: 'Authentication templates cannot include custom footer text; use code expiration instead' };
+    }
+    if (footerComponent?.code_expiration_minutes != null) {
+        const minutes = Number(footerComponent.code_expiration_minutes);
+        if (!Number.isFinite(minutes) || minutes < 1 || minutes > 90) {
+            return { valid: false, error: 'Code expiration must be between 1 and 90 minutes' };
+        }
+    }
+
+    const buttonsComponent = template.components.find(c => c.type === 'BUTTONS');
+    const otpButtons = (buttonsComponent?.buttons || []).filter(
+        b => b.type === 'OTP' || b.type === 'otp' || b.otp_type
+    );
+
+    if (otpButtons.length !== 1) {
+        return { valid: false, error: 'Authentication template must have exactly one OTP button' };
+    }
+
+    const otpType = String(otpButtons[0].otp_type || 'COPY_CODE').toUpperCase();
+    if (otpType === 'COPY_CODE' && !String(otpButtons[0].text || '').trim()) {
+        return { valid: false, error: 'Copy Code button label is required' };
+    }
+
+    return { valid: true, template: normalizeAuthenticationTemplate(template) };
+}
 
 // CHAT LIST
 
@@ -65,6 +172,22 @@ router.post("/create-template", auth, async (req, res) => {
         return res.status(200).json({ error: 'Language code not provided' });
     }
 
+    const authValidation = validateAuthenticationTemplate(template);
+    if (!authValidation.valid) {
+        return res.status(200).json({ error: authValidation.error });
+    }
+
+    const templatePayload = authValidation.template;
+
+    let storageTemplate;
+    let metaTemplate;
+    try {
+        storageTemplate = await processTemplateMediaForStorage(project_id, template_id, templatePayload);
+        metaTemplate = await expandTemplateMediaUrls(project_id, template_id, storageTemplate);
+    } catch (mediaError) {
+        return res.status(200).json({ error: mediaError?.message || "Failed to store template media" });
+    }
+
     const options = {
         method: 'POST',
         url: 'https://backend.aisensy.com/direct-apis/t1/wa_template',
@@ -73,7 +196,7 @@ router.post("/create-template", auth, async (req, res) => {
             Accept: 'application/json, application/xml',
             Authorization: `Bearer ${project_token}`
         },
-        data: template
+        data: metaTemplate
     };
 
     try {
@@ -87,21 +210,18 @@ router.post("/create-template", auth, async (req, res) => {
             var category = template?.category;
         }
 
+        storageTemplate.category = category;
+        const templateJson = serializeTemplateJson(storageTemplate);
+
         if (status == 'APPROVED') {
-            await pool.query("INSERT INTO `templates`(`template_id`, `waba_template_id`, `category`, `create_date`, `create_by`, `modify_date`, `modify_by`, `template_name`, `project_id`, `status`,`language_code`) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [template_id, waba_template_id, category, TIMESTAMP(), username, TIMESTAMP(), username, template_name, project_id, 'APPROVED', language_code]);
+            await pool.query("INSERT INTO `templates`(`template_id`, `waba_template_id`, `category`, `create_date`, `create_by`, `modify_date`, `modify_by`, `template_name`, `project_id`, `status`,`language_code`, `template_json`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [template_id, waba_template_id, category, TIMESTAMP(), username, TIMESTAMP(), username, template_name, project_id, 'APPROVED', language_code, templateJson]);
 
         } else if (status == 'REJECTED') {
             var rejected_reason = data?.rejected_reason;
-            await pool.query("INSERT INTO `templates`(`template_id`, `waba_template_id`, `category`, `create_date`, `create_by`, `modify_date`, `modify_by`, `template_name`, `project_id`, `status`, `reject_reason`,`language_code`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [template_id, waba_template_id, category, TIMESTAMP(), username, TIMESTAMP(), username, template_name, project_id, 'APPROVED', rejected_reason, language_code]);
+            await pool.query("INSERT INTO `templates`(`template_id`, `waba_template_id`, `category`, `create_date`, `create_by`, `modify_date`, `modify_by`, `template_name`, `project_id`, `status`, `reject_reason`,`language_code`, `template_json`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [template_id, waba_template_id, category, TIMESTAMP(), username, TIMESTAMP(), username, template_name, project_id, 'REJECTED', rejected_reason, language_code, templateJson]);
         } else {
-            await pool.query("INSERT INTO `templates`(`template_id`, `waba_template_id`, `category`, `create_date`, `create_by`, `modify_date`, `modify_by`, `template_name`, `project_id`, `status`,`language_code`) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [template_id, waba_template_id, category, TIMESTAMP(), username, TIMESTAMP(), username, template_name, project_id, 'PENDING', language_code]);
+            await pool.query("INSERT INTO `templates`(`template_id`, `waba_template_id`, `category`, `create_date`, `create_by`, `modify_date`, `modify_by`, `template_name`, `project_id`, `status`,`language_code`, `template_json`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [template_id, waba_template_id, category, TIMESTAMP(), username, TIMESTAMP(), username, template_name, project_id, 'PENDING', language_code, templateJson]);
         }
-
-        template.category = category;
-
-        const filePath = path.join(__dirname, `../media/templates/${template_id}.json`);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(template, null, 2));
 
     } catch (error) {
         if (error.response) {
@@ -120,12 +240,14 @@ router.post("/create-template", auth, async (req, res) => {
     var [latest_data] = await pool.query("SELECT * FROM templates WHERE template_id = ? AND project_id = ?", [template_id, project_id]);
     var status = latest_data[0]?.status;
 
+    const responseTemplate = await expandTemplateMediaUrls(project_id, template_id, storageTemplate);
+
     return res.status(200).json({
         template_name,
         language_code,
         status,
         template_id,
-        template: template
+        template: responseTemplate
     });
 });
 
@@ -143,9 +265,13 @@ router.post("/template-list", auth, async (req, res) => {
 
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;
-    const status = decrypt?.status;
+    const status_filter = decrypt?.status;
+    const category_filter = decrypt?.category;
     const page_no = Number(decrypt?.page_no) || 1;
     let limit = Number(decrypt?.limit) || 20;
+
+    const hasCategoryFilter = category_filter != null && String(category_filter).trim() !== '';
+    const categoryClause = hasCategoryFilter ? ' AND category = ?' : '';
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
@@ -159,23 +285,29 @@ router.post("/template-list", auth, async (req, res) => {
 
     const offset = (page_no - 1) * limit;
 
+    const listParams = [project_id, `%${status_filter}%`, '0'];
+    if (hasCategoryFilter) {
+        listParams.push(String(category_filter).trim());
+    }
+
     // Get total count for meta
     const [total_count_result] = await pool.query(
-        "SELECT COUNT(*) as total FROM templates WHERE project_id = ? AND status LIKE ? AND is_deleted = ?",
-        [project_id, `%${status}%`, '0']
+        `SELECT COUNT(*) as total FROM templates WHERE project_id = ? AND status LIKE ? AND is_deleted = ?${categoryClause}`,
+        listParams
     );
     const total_records = total_count_result[0]?.total || 0;
     const total_pages = Math.ceil(total_records / limit);
 
+    const pageParams = [...listParams, limit, offset];
     var [rows] = await pool.query(
-        "SELECT * FROM templates WHERE project_id = ? AND status LIKE ? AND is_deleted = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-        [project_id, `%${status}%`, '0', limit, offset]
+        `SELECT * FROM templates WHERE project_id = ? AND status LIKE ? AND is_deleted = ?${categoryClause} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        pageParams
     );
 
     const res_data = [];
 
     if (rows.length > 0) {
-        rows.forEach((element) => {
+        for (const element of rows) {
             var template_id = element.template_id;
             var waba_template_id = element.waba_template_id;
             var category = element.category;
@@ -184,7 +316,8 @@ router.post("/template-list", auth, async (req, res) => {
             var status = element.status;
             var reject_reason = element.reject_reason;
 
-            var template = fs.existsSync(path.join(__dirname, '../media/templates/' + template_id + '.json')) && JSON.parse(fs.readFileSync(path.join(__dirname, '../media/templates/' + template_id + '.json'), 'utf8')) || {};
+            const storedTemplate = parseTemplateJsonFromRow(element, template_id);
+            var template = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
 
             var object = {
                 template_id,
@@ -199,7 +332,7 @@ router.post("/template-list", auth, async (req, res) => {
 
             res_data.push(object);
 
-        });
+        }
 
     }
 
@@ -257,7 +390,8 @@ router.post("/template-details", auth, async (req, res) => {
     var create_date = data?.create_date;
     var reject_reason = data?.reject_reason;
 
-    var template = fs.existsSync(path.join(__dirname, '../media/templates/' + template_id + '.json')) && JSON.parse(fs.readFileSync(path.join(__dirname, '../media/templates/' + template_id + '.json'), 'utf8')) || {};
+    var storedTemplate = parseTemplateJsonFromRow(data, template_id);
+    var template = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
 
 
     return res.status(200).json({
@@ -384,6 +518,32 @@ router.post("/template-edit", auth, async (req, res) => {
 
 
 
+    const template_name = template?.name || template_data?.template_name;
+    const editCategory = category || template?.category || template_data?.category;
+
+    let templatePayload = template;
+    if (editCategory === 'AUTHENTICATION') {
+        const authValidation = validateAuthenticationTemplate({
+            ...template,
+            name: template_name,
+            language: language_code,
+            category: 'AUTHENTICATION',
+        });
+        if (!authValidation.valid) {
+            return res.status(200).json({ error: authValidation.error });
+        }
+        templatePayload = authValidation.template;
+    }
+
+    let storageTemplate;
+    let metaTemplate;
+    try {
+        storageTemplate = await processTemplateMediaForStorage(project_id, template_id, templatePayload);
+        metaTemplate = await expandTemplateMediaUrls(project_id, template_id, storageTemplate);
+    } catch (mediaError) {
+        return res.status(200).json({ error: mediaError?.message || "Failed to store template media" });
+    }
+
     const options = {
         method: 'POST',
         url: `https://backend.aisensy.com/direct-apis/t1/edit-template/${waba_template_id}`,
@@ -392,39 +552,34 @@ router.post("/template-edit", auth, async (req, res) => {
             Accept: 'application/json, application/xml',
             Authorization: `Bearer ${project_token}`
         },
-        data: template
+        data: metaTemplate
     };
 
     try {
         const { data } = await axios.request(options);
         var status = data?.status;
 
-        // Use category from payload, fallback to template.category if not provided
         const final_category = category || template?.category || '';
 
-        // Update template JSON file
-        template.category = final_category;
-        const filePath = path.join(__dirname, `../media/templates/${template_id}.json`);
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(template, null, 2));
+        storageTemplate.category = final_category;
+        const templateJson = serializeTemplateJson(storageTemplate);
 
-        // Update database with template_name, modify_date, modify_by, category
-        // Note: language_code is not updated (Meta doesn't allow changing language code)
         await pool.query(
-            "UPDATE `templates` SET `status` = ?, `template_name` = ?, `modify_date` = ?, `modify_by` = ?, `category` = ? WHERE `template_id` = ? AND `project_id` = ?",
-            ["PENDING", template_name, TIMESTAMP(), username, final_category, template_id, project_id]
+            "UPDATE `templates` SET `status` = ?, `template_name` = ?, `template_json` = ?, `modify_date` = ?, `modify_by` = ?, `category` = ? WHERE `template_id` = ? AND `project_id` = ?",
+            ["PENDING", template_name, templateJson, TIMESTAMP(), username, final_category, template_id, project_id]
         );
 
-        // Get updated template data
         var [latest_data] = await pool.query("SELECT * FROM templates WHERE template_id = ? AND project_id = ?", [template_id, project_id]);
         var updated_status = latest_data[0]?.status;
+
+        const responseTemplate = await expandTemplateMediaUrls(project_id, template_id, storageTemplate);
 
         return res.status(200).json({
             template_name,
             language_code,
             status: updated_status,
             template_id,
-            template: template
+            template: responseTemplate
         });
 
     } catch (error) {

@@ -1,0 +1,35 @@
+{
+  "name": "thankufordownload",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Dear App User"
+    },
+    {
+      "type": "BODY",
+      "text": "\"*Medihelp Service* এপটো ডাউনলোড কৰাৰ বাবে আপোনাক অশেষ ধন্যবাদ! এতিয়াৰে পৰা জৰুৰীকালীন সময়ত এম্বুলেন্স বুক কৰক অতি সহজে। আমি আপোনাৰ সেৱাত ২৪/৭ ঘণ্টা নিয়োজিত।\n\n\"আমাৰ সেৱা ভাল পাইছে নেকি? তেন্তে আমাক ৫-ষ্টাৰ (⭐⭐⭐⭐⭐) ৰেটিং দি সহায় কৰক! আপোনাৰ মৰম আৰু সঁহাৰিয়ে আমাক ২৪/৭ ঘণ্টা সেৱা দিয়াত শক্তি যোগাব।\""
+    },
+    {
+      "type": "FOOTER",
+      "text": "আপোনাৰ সুৰক্ষা, আমাৰ লক্ষ্য।"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Emergency Call Us",
+          "phone_number": "916001758696"
+        },
+        {
+          "type": "URL",
+          "text": "Give Rating",
+          "url": "https://g.page/r/CV9-Ew7ATbU3EBM/review"
+        }
+      ]
+    }
+  ]
+}

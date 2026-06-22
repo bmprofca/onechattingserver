@@ -1,0 +1,35 @@
+{
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "MEDIHELP SERVICE "
+    },
+    {
+      "type": "BODY",
+      "text": "Dear {{1}}\n\"জৰুৰীকালীন এম্বুলেন্স সেৱা এতিয়া আপোনাৰ মোবাইলত! আমাৰ *MEDIHELP SERVICE* এপটোৰ বিষয়ে সবিশেষ জানিবলৈ তলৰ নিউজ লিংকটো ক্লিক কৰক:",
+      "example": {
+        "body_text": [
+          [
+            "Inamul Hoque"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Link Preview",
+          "url": "https://www.facebook.com/share/v/18NqCN3yKC/"
+        }
+      ]
+    },
+    {
+      "type": "FOOTER",
+      "text": "প্ৰয়োজন হ’লে যোগাযোগ কৰিব।"
+    }
+  ]
+}

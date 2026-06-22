@@ -1,0 +1,42 @@
+{
+  "name": "payment_received",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/x1bv1fsfa675tax28h082t08o8y2u780x3a4165ih78.jpeg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear *{{1}}*,\n\nKindly Clear your due of Rs. *{{2}}* to Bmtax.\n\nThanks and Regards \nTeam *Bmtax*\n",
+      "example": {
+        "body_text": [
+          [
+            "Mubarak",
+            "2000"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "https://www.bmtaxopc.com/"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "spring_sale_prom",
+  "category": "MARKETING",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "TEXT",
+      "text": "Our {{1}} is on! {{1}}",
+      "example": {
+        "header_text": [
+          "Spring Sale"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Shop now through  and use code 232 to get 30% off of all merchandise."
+    },
+    {
+      "type": "FOOTER",
+      "text": "footer"
+    }
+  ]
+}

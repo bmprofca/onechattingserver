@@ -1,0 +1,30 @@
+{
+  "name": "payment_qr",
+  "category": "UTILITY",
+  "language": "en",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_handle": [
+          "https://api.w1chat.com/upload/41hwv35zm5w764x17u1ukn53mqu7jmchro7spae17j6.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Dear User,\nPlease pay in this QR"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "PHONE_NUMBER",
+          "text": "Call Us",
+          "phone_number": "917002695990"
+        }
+      ]
+    }
+  ]
+}

@@ -2,14 +2,11 @@ import axios from "axios";
 import pool from "../../db.js";
 import { GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP } from "../function.js";
 import { WsIo } from "../../server.js";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import {
+    buildTemplateDisplayMessage,
+    expandTemplateMediaUrls,
+    loadTemplateFromDb,
+} from "../templateStorage.js";
 
 /** In-memory lock: only one InitiateCampaignMessages per campaign at a time (prevents duplicate sends) */
 const processingCampaigns = new Set();
@@ -129,7 +126,8 @@ const InitiateCampaignMessages = async ({ campaign_id }) => {
 
 
                     // NEW
-                    var template_file_json = fs.existsSync(path.join(__dirname, '../../media/templates/' + template_id + '.json')) && JSON.parse(fs.readFileSync(path.join(__dirname, '../../media/templates/' + template_id + '.json'), 'utf8')) || {};
+                    const storedTemplate = await loadTemplateFromDb(project_id, template_id);
+                    var template_file_json = await expandTemplateMediaUrls(project_id, template_id, storedTemplate);
                     // NEW END
 
                     const return_message = {
@@ -138,7 +136,7 @@ const InitiateCampaignMessages = async ({ campaign_id }) => {
                         create_date: new_data[0]?.create_date,
                         type: new_data[0]?.type,
                         message_type: new_data[0]?.message_type,
-                        message: null,
+                        message: buildTemplateDisplayMessage(template_file_json, components),
                         is_template: true,
                         is_forwarded: false,
                         is_reply: false,
