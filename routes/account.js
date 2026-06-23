@@ -232,6 +232,9 @@ router.post("/profile", auth, async (req, res) => {
     const mobile = user_data.mobile;
     const email = user_data.email;
     const gender = user_data.gender;
+    const firm_name = user_data.firm_name;
+    const business_name = user_data.business_name;
+    const business_type = user_data.business_type;
 
     const [project_row] = await pool.query("SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = ? AND aisensy_projects.status = ?", [username, '0', '1']);
 
@@ -267,7 +270,10 @@ router.post("/profile", auth, async (req, res) => {
             country_code,
             mobile,
             email,
-            gender
+            gender,
+            firm_name,
+            business_name,
+            business_type,
         },
         balance,
         projects: {
@@ -309,17 +315,22 @@ router.post("/edit-profile", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const name = decrypt?.name;
     const mobile = decrypt?.mobile;
-    const email = decrypt?.email;
     const gender = decrypt?.gender;
     const country_code = decrypt?.country_code;
+    const firm_name = decrypt?.firm_name;
+    const business_name = decrypt?.business_name;
+    const business_type = decrypt?.business_type;
 
 
-    if (!name || !mobile || !email || !gender || !country_code) {
+    if (!name || !mobile || !gender || !country_code || !firm_name || !business_name || !business_type) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
     }
 
     try {
-        await pool.query("UPDATE `users` SET `email`=?,`name`=?,`country_code`=?,`mobile`=?,`gender`=?,`modify_date`=?,`modify_by`=? WHERE username = ?", [email, name, country_code, mobile, gender, TIMESTAMP(), username, username]);
+        await pool.query(
+            "UPDATE `users` SET `name`=?,`country_code`=?,`mobile`=?,`gender`=?,`firm_name`=?,`business_name`=?,`business_type`=?,`modify_date`=?,`modify_by`=? WHERE username = ?",
+            [name, country_code, mobile, gender, firm_name, business_name, business_type, TIMESTAMP(), username, username]
+        );
 
         const new_data = await USER_DATA(username);
 
@@ -330,7 +341,10 @@ router.post("/edit-profile", auth, async (req, res) => {
                 country_code: new_data?.country_code,
                 mobile: new_data?.mobile,
                 email: new_data?.email,
-                gender: new_data?.gender
+                gender: new_data?.gender,
+                firm_name: new_data?.firm_name,
+                business_name: new_data?.business_name,
+                business_type: new_data?.business_type,
             },
             msg: 'Profile updated successfully'
         })
