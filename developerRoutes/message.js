@@ -102,6 +102,130 @@ async function fetchAssigned({ number, project_id, username }) {
     };
 }
 
+async function getChatAssignCapability({ project_id, username, number = null }) {
+    const [mapRows] = await pool.query(
+        "SELECT * FROM `project_mapping` WHERE project_id = ? AND username = ? AND is_deleted = ? LIMIT 1",
+        [project_id, username, "0"]
+    );
+
+    if (mapRows.length === 0) {
+        return {
+            can_assign: false,
+            can_unassign: false,
+            can_manage: false,
+            is_admin: false,
+            has_chat_assign_access: false,
+            assigned_to_me: false,
+            assigned: false,
+            reason: "User is not mapped to this project",
+        };
+    }
+
+    const mapping = mapRows[0];
+    const is_admin = mapping.type === "admin";
+    let has_chat_assign_access = false;
+
+    if (!is_admin && mapping.permission_id) {
+        const [permissionRows] = await pool.query(
+            "SELECT id FROM `permission_options` WHERE permission_id = ? AND permission = ? AND status = ? LIMIT 1",
+            [mapping.permission_id, "chat assign access", "1"]
+        );
+        has_chat_assign_access = permissionRows.length > 0;
+    }
+
+    let assigned = false;
+    let assigned_to_me = false;
+    let assigned_user = null;
+
+    if (number) {
+        const [assignRows] = await pool.query(
+            "SELECT * FROM `chat_assigned` WHERE project_id = ? AND number = ? ORDER BY id DESC LIMIT 1",
+            [project_id, number]
+        );
+        if (assignRows.length > 0) {
+            assigned = true;
+            assigned_to_me = assignRows[0].username === username;
+            const assignedUserData = await USER_DATA(assignRows[0].username);
+            assigned_user = {
+                username: assignedUserData?.username,
+                name: assignedUserData?.name,
+                mobile: assignedUserData?.mobile,
+                email: assignedUserData?.email,
+                status: assignedUserData?.status === "1",
+            };
+        }
+    }
+
+    // Same rules as portal /chat-assign:
+    // - assign: currently assigned to me OR admin OR chat assign access permission
+    // - unassign: currently assigned to me
+    const can_assign = assigned_to_me || is_admin || has_chat_assign_access;
+    const can_unassign = assigned_to_me;
+    const can_manage = can_assign || can_unassign;
+
+    return {
+        can_assign,
+        can_unassign,
+        can_manage,
+        is_admin,
+        has_chat_assign_access,
+        assigned,
+        assigned_to_me,
+        assigned_user,
+        reason: can_manage
+            ? null
+            : "You do not have permission to manage chat assignment for this conversation",
+    };
+}
+
+async function performChatAssign({ project_id, username, number, target }) {
+    const [targetCheck] = await pool.query(
+        "SELECT username FROM `users` WHERE username = ? AND status = ? LIMIT 1",
+        [target, "1"]
+    );
+    if (targetCheck.length === 0) {
+        return { ok: false, error: "The selected user is invalid" };
+    }
+
+    const capability = await getChatAssignCapability({ project_id, username, number });
+    if (!capability.can_assign) {
+        return { ok: false, error: "You do not have permission to assign this chat" };
+    }
+
+    await pool.query("DELETE FROM `chat_assigned` WHERE number = ? AND project_id = ?", [
+        number,
+        project_id,
+    ]);
+    await pool.query(
+        "INSERT INTO `chat_assigned`(`project_id`, `number`, `username`, `create_date`, `create_by`) VALUES (?,?,?,?,?)",
+        [project_id, number, target, TIMESTAMP(), username]
+    );
+
+    await emitChatAssignedSocket(project_id, number, username);
+
+    return { ok: true, msg: "The user has been assigned successfully" };
+}
+
+async function performChatUnassign({ project_id, username, number }) {
+    const [checkRow] = await pool.query(
+        "SELECT id FROM `chat_assigned` WHERE number = ? AND username = ? AND project_id = ? LIMIT 1",
+        [number, username, project_id]
+    );
+
+    if (checkRow.length === 0) {
+        return { ok: false, error: "You are not assigned to this chat" };
+    }
+
+    await pool.query(
+        "DELETE FROM `chat_assigned` WHERE number = ? AND username = ? AND project_id = ?",
+        [number, username, project_id]
+    );
+
+    await emitChatAssignedSocket(project_id, number, username);
+
+    return { ok: true, msg: "You have been unassigned from this chat" };
+}
+
 async function emitChatAssignedSocket(project_id, number, username) {
     const assigning = await fetchAssigned({ number, project_id, username });
     await emitToProjectSockets(WsIo, project_id, "chat_assigned", { assigning });
@@ -1448,5 +1572,104 @@ router.post("/send-template", developerSendMessageAuth, async (req, res) => {
     }
 });
 
+/**
+ * GET /developer/message/chat-assign-permission
+ * Check whether the authenticated user token can manage chat assignment.
+ * Optional number: includes current assignment context for that chat.
+ */
+router.get("/chat-assign-permission", developerMessageAuth, async (req, res) => {
+    try {
+        const ctx = resolveProjectContext(req, res);
+        if (!ctx) return;
+
+        const { project_id, username } = ctx;
+        if (!username) {
+            return res.status(200).json({ error: "User token is required for this endpoint" });
+        }
+
+        const number = (req.query?.number || "").toString().trim() || null;
+        const capability = await getChatAssignCapability({ project_id, username, number });
+        const assigning = number
+            ? await fetchAssigned({ number, project_id, username })
+            : null;
+
+        return res.status(200).json({
+            error: false,
+            data: {
+                ...capability,
+                assigning,
+            },
+        });
+    } catch (error) {
+        return res.status(200).json({
+            error: "Failed to check chat assign permission",
+            e: error?.message || error,
+        });
+    }
+});
+
+/**
+ * POST /developer/message/chat-assign
+ * Assign or unassign a chat. Requires User Token (same rules as portal).
+ * Body: { number, type: "assign"|"unassign", target? }
+ */
+router.post("/chat-assign", developerMessageAuth, async (req, res) => {
+    try {
+        const ctx = resolveProjectContext(req, res);
+        if (!ctx) return;
+
+        const { project_id, username } = ctx;
+        if (!username) {
+            return res.status(200).json({ error: "User token is required for this endpoint" });
+        }
+
+        const number = (req.body?.number || "").toString().trim();
+        const type = (req.body?.type || "").toString().trim().toLowerCase();
+        const target = (req.body?.target || "").toString().trim();
+
+        if (!number || !type) {
+            return res.status(200).json({ error: "Provide all mandatory fields: number, type" });
+        }
+
+        if (type === "unassign") {
+            const result = await performChatUnassign({ project_id, username, number });
+            if (!result.ok) {
+                return res.status(200).json({ error: result.error });
+            }
+
+            const assigning = await fetchAssigned({ number, project_id, username });
+            return res.status(200).json({
+                error: false,
+                msg: result.msg,
+                assigning,
+            });
+        }
+
+        if (type === "assign") {
+            if (!target) {
+                return res.status(200).json({ error: "target is required when type is assign" });
+            }
+
+            const result = await performChatAssign({ project_id, username, number, target });
+            if (!result.ok) {
+                return res.status(200).json({ error: result.error });
+            }
+
+            const assigning = await fetchAssigned({ number, project_id, username });
+            return res.status(200).json({
+                error: false,
+                msg: result.msg,
+                assigning,
+            });
+        }
+
+        return res.status(200).json({ error: "Invalid type provided. Use assign or unassign" });
+    } catch (error) {
+        return res.status(200).json({
+            error: "Failed to update chat assignment",
+            e: error?.message || error,
+        });
+    }
+});
 
 export default router;
