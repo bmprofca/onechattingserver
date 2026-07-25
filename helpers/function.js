@@ -38,6 +38,41 @@ const toISTDateTimeString = (date = new Date()) =>
 
 const TIMESTAMP = () => toISTDateTimeString(new Date());
 
+/**
+ * Normalize a DB/API datetime value to "YYYY-MM-DD HH:mm:ss".
+ * DB stores naive IST wall-clock strings; mysql2 Date/ISO often keeps those
+ * same clock numbers with a Z suffix — strip/format without shifting timezone.
+ */
+const FORMAT_DATETIME = (value) => {
+    if (value === undefined || value === null || value === "") return value;
+
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return value;
+        const y = value.getUTCFullYear();
+        const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(value.getUTCDate()).padStart(2, "0");
+        const h = String(value.getUTCHours()).padStart(2, "0");
+        const mi = String(value.getUTCMinutes()).padStart(2, "0");
+        const s = String(value.getUTCSeconds()).padStart(2, "0");
+        return `${y}-${m}-${d} ${h}:${mi}:${s}`;
+    }
+
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)) {
+        return text;
+    }
+
+    // 2026-07-25T21:44:23.000Z → 2026-07-25 21:44:23
+    const isoMatch = text.match(
+        /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/
+    );
+    if (isoMatch) {
+        return `${isoMatch[1]} ${isoMatch[2]}`;
+    }
+
+    return text;
+};
+
 const FUTURE_TIMESTAMP = (minutes = 3) => {
     const future = new Date(Date.now() + minutes * 60 * 1000);
     return toISTDateTimeString(future);
@@ -393,6 +428,7 @@ const validateTurnstileToken = async (token, remoteip = null) => {
 export {
     RANDOM_STRING,
     TIMESTAMP,
+    FORMAT_DATETIME,
     GetAiSensyProjectToken,
     FUTURE_TIMESTAMP,
     GENERATE_PASSWORD,

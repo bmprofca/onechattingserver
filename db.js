@@ -14,6 +14,9 @@ const pool = mysql.createPool({
     charset: "utf8mb4",
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
+    // Keep DATETIME/TIMESTAMP/DATE as "YYYY-MM-DD HH:mm:ss" (or date-only),
+    // instead of JS Date objects that JSON.serialize to ISO UTC (...Z).
+    dateStrings: true,
 });
 
 export default pool;
