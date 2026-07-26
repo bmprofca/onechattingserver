@@ -156,15 +156,19 @@ async function getChatAssignCapability({ project_id, username, number = null }) 
         }
     }
 
-    // Same rules as portal /chat-assign:
-    // - assign: currently assigned to me OR admin OR chat assign access permission
-    // - unassign: currently assigned to me
-    const can_assign = assigned_to_me || is_admin || has_chat_assign_access;
+    // Same rules as portal /chat-assign, plus:
+    // - if nobody is assigned, the user may assign the chat to themselves
+    //   even without admin / chat-assign permission
+    const can_assign_others = assigned_to_me || is_admin || has_chat_assign_access;
+    const can_self_assign_open = Boolean(number) && !assigned;
+    const can_assign = can_assign_others || can_self_assign_open;
     const can_unassign = assigned_to_me;
     const can_manage = can_assign || can_unassign;
 
     return {
         can_assign,
+        can_assign_others,
+        can_self_assign_open,
         can_unassign,
         can_manage,
         is_admin,
@@ -190,6 +194,14 @@ async function performChatAssign({ project_id, username, number, target }) {
     const capability = await getChatAssignCapability({ project_id, username, number });
     if (!capability.can_assign) {
         return { ok: false, error: "You do not have permission to assign this chat" };
+    }
+
+    // Without admin / chat-assign permission / current ownership, only self-claim of an open chat is allowed
+    if (!capability.can_assign_others && target !== username) {
+        return {
+            ok: false,
+            error: "You can only assign this unassigned chat to yourself",
+        };
     }
 
     await pool.query("DELETE FROM `chat_assigned` WHERE number = ? AND project_id = ?", [
