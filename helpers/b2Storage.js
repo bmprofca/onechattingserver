@@ -127,6 +127,23 @@ function encodeB2FilePath(objectKey) {
     return objectKey.split("/").map((segment) => encodeURIComponent(segment)).join("/");
 }
 
+/** Public media URL served via this API: {BASE_DOMAIN}/proxy/{objectKey} */
+export function getProxyMediaUrl(objectKey) {
+    if (!objectKey) return null;
+    const normalized = String(objectKey).replace(/^\/+/, "").replace(/\\/g, "/");
+    const encodedPath = encodeB2FilePath(normalized);
+    return `${BASE_DOMAIN}/proxy/${encodedPath}`;
+}
+
+export function isAllowedProxyObjectKey(objectKey) {
+    if (!objectKey || typeof objectKey !== "string") return false;
+    const key = objectKey.replace(/^\/+/, "").replace(/\\/g, "/");
+    if (!key || key.includes("..") || key.startsWith("/") || path.isAbsolute(key)) {
+        return false;
+    }
+    return key.startsWith("chat/") || key.startsWith("templates/");
+}
+
 async function getDownloadAuthorization(fileNamePrefix) {
     const cacheKey = fileNamePrefix;
     const cached = downloadAuthCache.get(cacheKey);
@@ -156,12 +173,61 @@ async function getDownloadAuthorization(fileNamePrefix) {
     return data.authorizationToken;
 }
 
-async function getSignedB2FileUrl(objectKey) {
+/** Signed B2 download URL for server-side proxy fetches only. */
+export async function getSignedB2FileUrl(objectKey) {
     const auth = await authorizeB2();
     const downloadToken = await getDownloadAuthorization(objectKey);
     const encodedPath = encodeB2FilePath(objectKey);
 
     return `${auth.downloadUrl}/file/${process.env.B2_BUCKET}/${encodedPath}?Authorization=${encodeURIComponent(downloadToken)}`;
+}
+
+/**
+ * Stream a B2 object for the /proxy route.
+ * @returns {Promise<{ stream: import('stream').Readable, contentType?: string, contentLength?: string, status: number }>}
+ */
+export async function streamB2Object(objectKey) {
+    assertB2Configured();
+
+    if (!isAllowedProxyObjectKey(objectKey)) {
+        const err = new Error("Invalid or disallowed media path");
+        err.status = 400;
+        throw err;
+    }
+
+    const signedUrl = await getSignedB2FileUrl(objectKey);
+    try {
+        const response = await axios.get(signedUrl, {
+            responseType: "stream",
+            validateStatus: () => true,
+            timeout: 120_000,
+            maxRedirects: 5,
+        });
+
+        if (response.status === 404) {
+            const err = new Error("File not found");
+            err.status = 404;
+            throw err;
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+            const err = new Error(`Upstream storage error (${response.status})`);
+            err.status = 502;
+            throw err;
+        }
+
+        return {
+            stream: response.data,
+            contentType: response.headers["content-type"],
+            contentLength: response.headers["content-length"],
+            status: response.status,
+        };
+    } catch (error) {
+        if (error.status) throw error;
+        const err = new Error(error?.message || "Failed to fetch media from storage");
+        err.status = 502;
+        throw err;
+    }
 }
 
 export function getContentTypeFromExtension(ext) {
@@ -217,7 +283,7 @@ export async function getTemplateMediaUrl(project_id, template_id, fileName) {
     }
 
     const objectKey = `${getTemplateMediaKeyPrefix(project_id, template_id)}/${fileName}`;
-    return getSignedB2FileUrl(objectKey);
+    return getProxyMediaUrl(objectKey);
 }
 
 export function getTemplateMediaKeyPrefix(project_id, template_id) {
@@ -235,7 +301,7 @@ export async function getChatMediaUrl(project_id, number, mediaType, file_path) 
 
     if (isB2Enabled()) {
         const objectKey = `chat/${project_id}/${number}/${mediaType}/${file_path}`;
-        return getSignedB2FileUrl(objectKey);
+        return getProxyMediaUrl(objectKey);
     }
 
     const localPath = path.join(process.cwd(), "media", "chat", project_id, String(number), mediaType, file_path);

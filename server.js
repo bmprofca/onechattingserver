@@ -21,7 +21,7 @@ import fs from "fs";
 import mime from "mime";
 import { fileURLToPath } from "url";
 import http from "http";
-import { isB2Enabled, initB2Storage, getB2PublicBaseUrl } from "./helpers/b2Storage.js";
+import { isB2Enabled, initB2Storage, getB2PublicBaseUrl, streamB2Object, getContentTypeFromExtension } from "./helpers/b2Storage.js";
 import { setupSocketIO } from "./helpers/Socket.js";
 import { startCronJobs } from "./routes/cron.js";
 import planRouter from "./routes/plan.js";
@@ -46,6 +46,79 @@ app.use(
         },
     })
 );
+
+/**
+ * B2 media proxy — clients use {BASE_DOMAIN}/proxy/chat|templates/...
+ * instead of direct backblazeb2.com URLs (blocked on some networks).
+ * Express 5 named wildcard: /proxy/*objectKey
+ */
+async function handleMediaProxy(req, res) {
+    try {
+        if (!isB2Enabled()) {
+            return res.status(503).send("Media storage is not configured");
+        }
+
+        const splat = req.params?.objectKey;
+        const rawPath = Array.isArray(splat)
+            ? splat.join("/")
+            : String(splat || req.path || "").replace(/^\/+/, "");
+
+        const objectKey = rawPath
+            .split("/")
+            .filter(Boolean)
+            .map((segment) => {
+                try {
+                    return decodeURIComponent(segment);
+                } catch {
+                    return segment;
+                }
+            })
+            .join("/");
+
+        if (!objectKey) {
+            return res.status(400).send("Missing media path");
+        }
+
+        const { stream, contentType, contentLength } = await streamB2Object(objectKey);
+
+        const ext = path.extname(objectKey);
+        const resolvedType =
+            contentType || getContentTypeFromExtension(ext.replace(/^\./, "")) || "application/octet-stream";
+
+        res.setHeader("Content-Type", resolvedType);
+        res.setHeader("Content-Disposition", "inline");
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        if (contentLength) {
+            res.setHeader("Content-Length", contentLength);
+        }
+
+        if (req.method === "HEAD") {
+            stream.destroy();
+            return res.end();
+        }
+
+        stream.on("error", (err) => {
+            console.error("B2 proxy stream error:", err?.message || err);
+            if (!res.headersSent) {
+                res.status(502).send("Failed to stream media");
+            } else {
+                res.destroy();
+            }
+        });
+
+        stream.pipe(res);
+    } catch (error) {
+        const status = error?.status || 502;
+        console.error("B2 proxy error:", error?.message || error);
+        if (!res.headersSent) {
+            return res.status(status).send(error?.message || "Failed to fetch media");
+        }
+    }
+}
+
+app.get("/proxy/*objectKey", handleMediaProxy);
+app.head("/proxy/*objectKey", handleMediaProxy);
+
 app.use("/message", messagesRouter);
 app.use("/webhook", webhookRouter);
 app.use("/account", accountRouter);
@@ -157,6 +230,7 @@ server.listen(PORT, '0.0.0.0', async () => {
         try {
             await initB2Storage();
             console.log(`📦 Chat media storage: Backblaze B2 (${process.env.B2_BUCKET})`);
+            console.log(`   Media proxy: /proxy/chat|templates/...`);
             console.log(`   Public URL base: ${getB2PublicBaseUrl()}`);
         } catch (error) {
             console.error(`⚠️  B2 initialization failed: ${error.message}`);
