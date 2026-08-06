@@ -273,6 +273,33 @@
           "comment": null
         },
         {
+          "name": "auto_reply",
+          "type": "enum('0','1')",
+          "nullable": true,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": "0 = Inactive, 1 = Active"
+        },
+        {
+          "name": "auto_reply_type",
+          "type": "enum('all','new')",
+          "nullable": true,
+          "key": null,
+          "default": "'new'",
+          "extra": null,
+          "comment": "all = reply to all conversations, new = reply to new conversations only"
+        },
+        {
+          "name": "context",
+          "type": "longtext",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": "Company Q&A Context for AI Auto-reply"
+        },
+        {
           "name": "auto_case_create",
           "type": "enum('0','1')",
           "nullable": false,
