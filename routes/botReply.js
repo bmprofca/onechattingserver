@@ -241,6 +241,50 @@ router.post("/update-auto-reply-type", auth, async (req, res) => {
     }
 });
 
+// Update agent_use_personal_key toggle
+router.post("/toggle-personal-key", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const username = req.headers["username"] ? req.headers["username"] : '';
+    const project_id = decrypt?.project_id;
+    const agent_use_personal_key = decrypt?.agent_use_personal_key === true || decrypt?.agent_use_personal_key === '1' ? '1' : '0';
+
+    if (!project_id || decrypt?.agent_use_personal_key === undefined) {
+        return res.status(200).json({ error: 'Provide all mandatory fields: project_id, agent_use_personal_key' });
+    }
+
+    const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+    if (!check_project_mapping) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    try {
+        await pool.query(
+            "UPDATE aisensy_projects SET agent_use_personal_key = ?, modify_date = ?, modify_by = ? WHERE project_id = ?",
+            [agent_use_personal_key, TIMESTAMP(), username, project_id]
+        );
+
+        return res.status(200).json({
+            error: false,
+            msg: `Agent personal key usage turned ${agent_use_personal_key === '1' ? 'ON' : 'OFF'}`
+        });
+    } catch (error) {
+        return res.status(200).json({
+            error: 'Failed to update agent personal key setting',
+            e: error.message || error
+        });
+    }
+});
+
 // ============================================================
 // API Key Management CRUD Endpoints
 // ============================================================
