@@ -173,7 +173,7 @@ ${context}
 
         if (provider === 'gemini') {
             const aiInstance = personalApiKey ? new GoogleGenerativeAI(personalApiKey) : genAI;
-            const modelName = personalModel || "gemini-1.5-flash";
+            const modelName = personalModel || "gemini-2.0-flash";
             const model = aiInstance.getGenerativeModel({ model: modelName });
 
             const chat = model.startChat({
