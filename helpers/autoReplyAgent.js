@@ -10,7 +10,9 @@ import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "./socketEmit.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const FALLBACK_MESSAGE = "I'm unable to help with this. Please connect with our support agent for further assistance.";
+const FALLBACK_ERROR = "I'm unable to help with this at the moment. Please connect with our support agent for further assistance.";
+const FALLBACK_NO_ANSWER = "Your Query related having no answer";
+const FALLBACK_NO_CONTEXT = "Sorry, I have not information about you query";
 
 /**
  * Generate a reply using the chosen provider's SDK based on the company context.
@@ -28,17 +30,20 @@ async function generateAutoReply(context, customerMessage, personalApiKey = null
 
     if (!apiKey) {
         console.error("No API key available for auto-reply");
-        return FALLBACK_MESSAGE;
+        return FALLBACK_ERROR;
     }
+
+    const hasContext = context && context.trim() !== '';
 
     try {
         const systemPrompt = `You are a helpful customer support agent for a company. 
-Answer ONLY based on the provided company context below. 
-If the context does not contain the answer or if the user's request cannot be fully satisfied by the context alone, respond EXACTLY with: [FALLBACK]
-Do not apologize or explain that you don't know. Just output [FALLBACK].
+1. You MUST naturally handle general conversational greetings (like "Hi", "Hello", "Good morning") and ask how you can help.
+2. For specific questions about the company, its services, or policies, you MUST answer ONLY based on the provided company context below. 
+3. If the context does not contain the answer to a specific question, or if there is no context provided, respond EXACTLY with: [FALLBACK]
+4. Do not apologize or explain that you don't know. Just output [FALLBACK].
 
 Company Context:
-${context}
+${hasContext ? context : 'No company context provided.'}
 `;
 
         let responseText = '';
@@ -106,14 +111,14 @@ ${context}
         }
 
         if (responseText === '[FALLBACK]') {
-            return FALLBACK_MESSAGE;
+            return hasContext ? FALLBACK_NO_ANSWER : FALLBACK_NO_CONTEXT;
         }
 
         return responseText;
 
     } catch (error) {
         console.error(`Error generating AI reply via ${provider}:`, error);
-        return FALLBACK_MESSAGE;
+        return FALLBACK_ERROR;
     }
 }
 
@@ -142,8 +147,8 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
 
         const { unique_id: projectUniqueId, auto_reply, auto_reply_type, context, agent_use_personal_key } = projectRows[0];
         
-        // If auto_reply is off, or context is empty, skip
-        if (auto_reply !== '1' || !context || context.trim() === '') return;
+        // If auto_reply is off, skip
+        if (auto_reply !== '1') return;
 
         // 2. If type is 'new', check if this contact has any prior message history
         // If they do, skip auto-reply (only reply to brand-new contacts)
