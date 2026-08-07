@@ -411,6 +411,12 @@ router.post("/save-api-key", auth, async (req, res) => {
         const projectUniqueId = projectRows[0].unique_id;
         const keyUniqueId = RANDOM_STRING(30);
 
+        // Deactivate any currently active keys for this project
+        await pool.query(
+            "UPDATE project_agent_api_keys SET is_active = '0' WHERE aisensy_project = ?",
+            [projectUniqueId]
+        );
+
         await pool.query(
             "INSERT INTO project_agent_api_keys (unique_id, aisensy_project, api_provider, api_model, api_key, is_active, create_date, create_by) VALUES (?, ?, ?, ?, ?, '1', ?, ?)",
             [keyUniqueId, projectUniqueId, api_provider, api_model, api_key, TIMESTAMP(), username]

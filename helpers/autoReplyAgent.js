@@ -1,4 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
+
 import pool from "../db.js";
 import { RANDOM_STRING, TIMESTAMP, GetAiSensyProjectToken } from "./function.js";
 import axios from "axios";
@@ -9,29 +13,25 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const FALLBACK_MESSAGE = "I'm unable to help with this. Please connect with our support agent for further assistance.";
 
 /**
- * Generate a reply using Google Gemini based on the company context.
+ * Generate a reply using the chosen provider's SDK based on the company context.
  * 
  * @param {string} context - The company's Q&A context
  * @param {string} customerMessage - The incoming message from the customer
  * @param {string|null} personalApiKey - Optional personal API key to use instead of .env key
  * @param {string|null} personalModel - Optional model name from personal key config
+ * @param {string|null} personalProvider - Optional provider name (gemini, openai, claude, groq)
  * @returns {Promise<string>} The generated reply or FALLBACK_MESSAGE
  */
-async function generateAutoReply(context, customerMessage, personalApiKey = null, personalModel = null) {
-    // Determine which API key and GenAI instance to use
+async function generateAutoReply(context, customerMessage, personalApiKey = null, personalModel = null, personalProvider = null) {
     const apiKey = personalApiKey || process.env.GEMINI_API_KEY;
+    const provider = (personalApiKey ? personalProvider : 'gemini') || 'gemini';
 
     if (!apiKey) {
-        console.error("No API key available for auto-reply (neither personal key nor GEMINI_API_KEY)");
+        console.error("No API key available for auto-reply");
         return FALLBACK_MESSAGE;
     }
 
     try {
-        // Use personal key instance if provided, otherwise use the global one
-        const aiInstance = personalApiKey ? new GoogleGenerativeAI(personalApiKey) : genAI;
-        const modelName = personalModel || "gemini-1.5-flash";
-        const model = aiInstance.getGenerativeModel({ model: modelName });
-        
         const systemPrompt = `You are a helpful customer support agent for a company. 
 Answer ONLY based on the provided company context below. 
 If the context does not contain the answer or if the user's request cannot be fully satisfied by the context alone, respond EXACTLY with: [FALLBACK]
@@ -41,24 +41,69 @@ Company Context:
 ${context}
 `;
 
-        const chat = model.startChat({
-            history: [
-                {
-                    role: "user",
-                    parts: [{ text: systemPrompt }],
-                },
-                {
-                    role: "model",
-                    parts: [{ text: "Understood. I will only answer based on the context, or output [FALLBACK]." }],
-                },
-            ],
-            generationConfig: {
-                temperature: 0.2, // Low temperature for factual, less creative responses
-            },
-        });
+        let responseText = '';
 
-        const result = await chat.sendMessage(customerMessage);
-        const responseText = result.response.text().trim();
+        if (provider === 'gemini') {
+            const aiInstance = personalApiKey ? new GoogleGenerativeAI(personalApiKey) : genAI;
+            const modelName = personalModel || "gemini-1.5-flash";
+            const model = aiInstance.getGenerativeModel({ model: modelName });
+            
+            const chat = model.startChat({
+                history: [
+                    {
+                        role: "user",
+                        parts: [{ text: systemPrompt }],
+                    },
+                    {
+                        role: "model",
+                        parts: [{ text: "Understood. I will only answer based on the context, or output [FALLBACK]." }],
+                    },
+                ],
+                generationConfig: {
+                    temperature: 0.2, // Low temperature for factual, less creative responses
+                },
+            });
+
+            const result = await chat.sendMessage(customerMessage);
+            responseText = result.response.text().trim();
+
+        } else if (provider === 'openai') {
+            const openai = new OpenAI({ apiKey });
+            const completion = await openai.chat.completions.create({
+                model: personalModel || 'gpt-4o',
+                temperature: 0.2,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: customerMessage }
+                ]
+            });
+            responseText = completion.choices[0].message.content.trim();
+
+        } else if (provider === 'claude') {
+            const anthropic = new Anthropic({ apiKey });
+            const msg = await anthropic.messages.create({
+                model: personalModel || 'claude-3-5-sonnet-latest',
+                max_tokens: 1024,
+                temperature: 0.2,
+                system: systemPrompt,
+                messages: [
+                    { role: 'user', content: customerMessage }
+                ]
+            });
+            responseText = msg.content[0].text.trim();
+
+        } else if (provider === 'groq') {
+            const groq = new Groq({ apiKey });
+            const completion = await groq.chat.completions.create({
+                model: personalModel || 'groq-1',
+                temperature: 0.2,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: customerMessage }
+                ]
+            });
+            responseText = completion.choices[0].message.content.trim();
+        }
 
         if (responseText === '[FALLBACK]') {
             return FALLBACK_MESSAGE;
@@ -67,7 +112,7 @@ ${context}
         return responseText;
 
     } catch (error) {
-        console.error("Error generating AI reply:", error);
+        console.error(`Error generating AI reply via ${provider}:`, error);
         return FALLBACK_MESSAGE;
     }
 }
@@ -118,24 +163,26 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
         // 3. Determine which API key to use
         let personalApiKey = null;
         let personalModel = null;
+        let personalProvider = null;
 
         if (agent_use_personal_key === '1') {
             // Fetch the active personal API key for this project
             const [keyRows] = await connection.query(
-                "SELECT api_key, api_model FROM project_agent_api_keys WHERE aisensy_project = ? AND is_active = '1' AND is_deleted = '0' LIMIT 1",
+                "SELECT api_key, api_model, api_provider FROM project_agent_api_keys WHERE aisensy_project = ? AND is_active = '1' AND is_deleted = '0' ORDER BY create_date DESC LIMIT 1",
                 [projectUniqueId]
             );
 
             if (keyRows.length > 0) {
                 personalApiKey = keyRows[0].api_key;
                 personalModel = keyRows[0].api_model || null;
+                personalProvider = keyRows[0].api_provider || null;
             } else {
                 console.warn(`agent_use_personal_key is ON for project ${project_id} but no active API key found. Falling back to .env key.`);
             }
         }
 
         // 4. Generate AI Reply (with personal key if available, otherwise .env key)
-        const replyText = await generateAutoReply(context, messageText, personalApiKey, personalModel);
+        const replyText = await generateAutoReply(context, messageText, personalApiKey, personalModel, personalProvider);
 
         // 5. Send the reply via AiSensy API
         const projectToken = await GetAiSensyProjectToken(project_id);
