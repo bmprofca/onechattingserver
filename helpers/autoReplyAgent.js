@@ -13,16 +13,24 @@ const FALLBACK_MESSAGE = "I'm unable to help with this. Please connect with our 
  * 
  * @param {string} context - The company's Q&A context
  * @param {string} customerMessage - The incoming message from the customer
+ * @param {string|null} personalApiKey - Optional personal API key to use instead of .env key
+ * @param {string|null} personalModel - Optional model name from personal key config
  * @returns {Promise<string>} The generated reply or FALLBACK_MESSAGE
  */
-async function generateAutoReply(context, customerMessage) {
-    if (!process.env.GEMINI_API_KEY) {
-        console.error("GEMINI_API_KEY is not set in environment variables");
+async function generateAutoReply(context, customerMessage, personalApiKey = null, personalModel = null) {
+    // Determine which API key and GenAI instance to use
+    const apiKey = personalApiKey || process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+        console.error("No API key available for auto-reply (neither personal key nor GEMINI_API_KEY)");
         return FALLBACK_MESSAGE;
     }
 
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // Use personal key instance if provided, otherwise use the global one
+        const aiInstance = personalApiKey ? new GoogleGenerativeAI(personalApiKey) : genAI;
+        const modelName = personalModel || "gemini-1.5-flash";
+        const model = aiInstance.getGenerativeModel({ model: modelName });
         
         const systemPrompt = `You are a helpful customer support agent for a company. 
 Answer ONLY based on the provided company context below. 
@@ -79,15 +87,15 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
     try {
         connection = await pool.getConnection();
 
-        // 1. Check project auto_reply setting, type and context
+        // 1. Check project auto_reply setting, type, context, and personal key preference
         const [projectRows] = await connection.query(
-            "SELECT auto_reply, auto_reply_type, context FROM aisensy_projects WHERE project_id = ? LIMIT 1",
+            "SELECT unique_id, auto_reply, auto_reply_type, context, agent_use_personal_key FROM aisensy_projects WHERE project_id = ? LIMIT 1",
             [project_id]
         );
 
         if (projectRows.length === 0) return; // Project not found
 
-        const { auto_reply, auto_reply_type, context } = projectRows[0];
+        const { unique_id: projectUniqueId, auto_reply, auto_reply_type, context, agent_use_personal_key } = projectRows[0];
         
         // If auto_reply is off, or context is empty, skip
         if (auto_reply !== '1' || !context || context.trim() === '') return;
@@ -107,10 +115,29 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
             }
         }
 
-        // 3. Generate AI Reply
-        const replyText = await generateAutoReply(context, messageText);
+        // 3. Determine which API key to use
+        let personalApiKey = null;
+        let personalModel = null;
 
-        // 4. Send the reply via AiSensy API
+        if (agent_use_personal_key === '1') {
+            // Fetch the active personal API key for this project
+            const [keyRows] = await connection.query(
+                "SELECT api_key, api_model FROM project_agent_api_keys WHERE aisensy_project = ? AND is_active = '1' AND is_deleted = '0' LIMIT 1",
+                [projectUniqueId]
+            );
+
+            if (keyRows.length > 0) {
+                personalApiKey = keyRows[0].api_key;
+                personalModel = keyRows[0].api_model || null;
+            } else {
+                console.warn(`agent_use_personal_key is ON for project ${project_id} but no active API key found. Falling back to .env key.`);
+            }
+        }
+
+        // 4. Generate AI Reply (with personal key if available, otherwise .env key)
+        const replyText = await generateAutoReply(context, messageText, personalApiKey, personalModel);
+
+        // 5. Send the reply via AiSensy API
         const projectToken = await GetAiSensyProjectToken(project_id);
         if (!projectToken) {
             console.error("Failed to get AiSensy token for project", project_id);
@@ -157,7 +184,7 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
             await connection.query("UPDATE `messages` SET `status` = ?, `failed_reason` = ? WHERE `unique_id` = ?", [status, failed_reason, unique_id]);
         }
 
-        // 5. Emit via Socket
+        // 6. Emit via Socket
         const [newMsgRows] = await connection.query("SELECT * FROM messages WHERE unique_id = ?", [unique_id]);
         
         if (newMsgRows.length > 0) {

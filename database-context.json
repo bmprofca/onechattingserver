@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-06-22T12:38:44.435Z",
   "database": "u278432002_onechatting",
-  "tableCount": 26,
+  "tableCount": 27,
   "tables": [
     {
       "table": "aisensy_businesses",
@@ -334,6 +334,15 @@
           "default": null,
           "extra": null,
           "comment": "0 = Deactive\r\n1 = Active"
+        },
+        {
+          "name": "agent_use_personal_key",
+          "type": "enum('0','1')",
+          "nullable": true,
+          "key": null,
+          "default": "0",
+          "extra": null,
+          "comment": "0 = use .env GEMINI_API_KEY, 1 = use project_agent_api_keys"
         }
       ],
       "indexes": {
@@ -349,6 +358,132 @@
           ],
           "nonUnique": true
         },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "project_agent_api_keys",
+      "tableRows": 0,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-08-07T00:00:00.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "aisensy_project",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "References aisensy_projects.unique_id"
+        },
+        {
+          "name": "api_provider",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": null,
+          "default": "gemini",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "api_model",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "api_key",
+          "type": "text",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_active",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "1",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": "on update current_timestamp()",
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "0",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
         "PRIMARY": {
           "columns": [
             "id"
