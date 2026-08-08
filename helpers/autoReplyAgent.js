@@ -60,11 +60,12 @@ function isFallbackToken(text) {
 /**
  * Call Gemini and return the raw text.
  */
-async function callGemini({ apiKey, model, systemPrompt, message }) {
+async function callGemini({ apiKey, model, systemPrompt, context, message }) {
     const client = new GoogleGenerativeAI(apiKey);
+    const finalSystemPrompt = systemPrompt || (context ? buildSystemPrompt(context) : undefined);
     const genModel = client.getGenerativeModel({
         model,
-        systemInstruction: systemPrompt,
+        systemInstruction: finalSystemPrompt,
     });
     const chat = genModel.startChat({ generationConfig: { temperature: 0.4 } });
     const result = await chat.sendMessage(message);
@@ -75,13 +76,14 @@ async function callGemini({ apiKey, model, systemPrompt, message }) {
  * Call OpenAI (works with any chat-completions compatible model name,
  * e.g. gpt-4o, gpt-4o-mini, gpt-4.1, o3, etc.)
  */
-async function callOpenAI({ apiKey, model, systemPrompt, message }) {
+async function callOpenAI({ apiKey, model, systemPrompt, context, message }) {
     const client = new OpenAI({ apiKey });
+    const finalSystemPrompt = systemPrompt || (context ? buildSystemPrompt(context) : undefined);
     const completion = await client.chat.completions.create({
         model,
         temperature: 0.4,
         messages: [
-            { role: "system", content: systemPrompt },
+            ...(finalSystemPrompt ? [{ role: "system", content: finalSystemPrompt }] : []),
             { role: "user", content: message },
         ],
     });
@@ -92,13 +94,14 @@ async function callOpenAI({ apiKey, model, systemPrompt, message }) {
  * Call Anthropic Claude (any model string, e.g. claude-3-5-sonnet-latest,
  * claude-3-5-haiku-latest, claude-opus-4-*, etc.)
  */
-async function callClaude({ apiKey, model, systemPrompt, message }) {
+async function callClaude({ apiKey, model, systemPrompt, context, message }) {
     const client = new Anthropic({ apiKey });
+    const finalSystemPrompt = systemPrompt || (context ? buildSystemPrompt(context) : undefined);
     const msg = await client.messages.create({
         model,
         max_tokens: 1024,
         temperature: 0.4,
-        system: systemPrompt,
+        system: finalSystemPrompt,
         messages: [{ role: "user", content: message }],
     });
     return msg.content
@@ -112,13 +115,14 @@ async function callClaude({ apiKey, model, systemPrompt, message }) {
  * Call Groq (OpenAI-compatible chat completions API, any hosted model name
  * e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768, etc.)
  */
-async function callGroq({ apiKey, model, systemPrompt, message }) {
+async function callGroq({ apiKey, model, systemPrompt, context, message }) {
     const client = new Groq({ apiKey });
+    const finalSystemPrompt = systemPrompt || (context ? buildSystemPrompt(context) : undefined);
     const completion = await client.chat.completions.create({
         model,
         temperature: 0.4,
         messages: [
-            { role: "system", content: systemPrompt },
+            ...(finalSystemPrompt ? [{ role: "system", content: finalSystemPrompt }] : []),
             { role: "user", content: message },
         ],
     });
@@ -167,6 +171,7 @@ async function generateAutoReply(context, customerMessage, apiKey, provider, mod
             apiKey,
             model: modelToUse,
             systemPrompt,
+            context,
             message: customerMessage,
         });
 
