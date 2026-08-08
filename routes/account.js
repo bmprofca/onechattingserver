@@ -22,19 +22,21 @@ router.post("/login", async (req, res) => {
 
     const email = decrypt.email;
     const password = decrypt.password;
-    const captcha_token = decrypt?.captcha_token;
+    // const captcha_token = decrypt?.captcha_token;
+    // console.log("email :", email, "password :", password);
 
     if (!email || !password) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
     }
-    if (!captcha_token) {
-        return res.status(200).json({ error: 'Captcha verification is required' });
-    }
+    // if (!captcha_token) {
+    //     console.log("captcha_token :", captcha_token);
+    //     return res.status(200).json({ error: 'Captcha verification is required' });
+    // }
 
-    const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
-    if (!isValidCaptcha) {
-        return res.status(200).json({ error: 'Captcha verification failed. Please try again.' });
-    }
+    // // const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
+    // if (!isValidCaptcha) {
+    //     return res.status(200).json({ error: 'Captcha verification failed. Please try again.' });
+    // }
 
     const [data_row] = await pool.query("SELECT * FROM users WHERE email = ? AND password = ?", [email, password]);
 
@@ -72,7 +74,7 @@ router.post("/login", async (req, res) => {
 
     const project_count = projects.length;
 
-
+    // console.log("login successfully",);
     return res.status(200).json({
         error: false,
         username: username,
@@ -108,19 +110,19 @@ router.post("/register", async (req, res) => {
     const firm_name = decrypt.firm_name;
     const mobile = decrypt.mobile;
     const country_code = decrypt.country_code;
-    const captcha_token = decrypt?.captcha_token;
+    // const captcha_token = decrypt?.captcha_token;
 
     if (!email || !password || !confirm_password || !name || !firm_name || !mobile || !country_code) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
     }
-    if (!captcha_token) {
-        return res.status(200).json({ error: 'Captcha verification is required' });
-    }
+    // if (!captcha_token) {
+    //     return res.status(200).json({ error: 'Captcha verification is required' });
+    // }
 
-    const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
-    if (!isValidCaptcha) {
-        return res.status(200).json({ error: 'Captcha verification failed. Please try again.' });
-    }
+    // const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
+    // if (!isValidCaptcha) {
+    //     return res.status(200).json({ error: 'Captcha verification failed. Please try again.' });
+    // }
 
     if (password !== confirm_password) {
         return res.status(200).json({ error: 'Password & confirm password not matched' });
