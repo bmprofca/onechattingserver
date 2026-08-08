@@ -84,17 +84,27 @@ function _pick(arr) {
 
 /**
  * Detect if the AI response is a refusal/fallback rather than a real answer.
- * Catches both the explicit [FALLBACK] token and common AI-generated refusal phrases.
+ * Only the EXACT [FALLBACK] token is treated as authoritative — everything else
+ * is a heuristic used ONLY when the whole response is short. This avoids
+ * clobbering a real, context-grounded answer just because it happens to
+ * contain a phrase like "contact support" somewhere in a longer reply.
  */
 function _isAIRefusal(text) {
     if (!text) return true;
 
-    // Explicit fallback token
-    if (text.includes('[FALLBACK]')) return true;
+    const trimmed = text.trim();
 
-    const lower = text.toLowerCase();
+    // Explicit fallback token — authoritative, always wins
+    if (trimmed === '[FALLBACK]' || trimmed.includes('[FALLBACK]')) return true;
 
-    // Common AI refusal patterns
+    // Heuristic fallback ONLY applies to short responses (a real answer
+    // pulled from context is rarely under ~180 chars AND phrased like a refusal).
+    // This prevents a long, valid, context-based answer from being discarded
+    // just because it mentions "support" or similar words in passing.
+    if (trimmed.length > 180) return false;
+
+    const lower = trimmed.toLowerCase();
+
     const refusalPatterns = [
         "i'm unable to help",
         "i am unable to help",
@@ -103,9 +113,6 @@ function _isAIRefusal(text) {
         "i don't have information",
         "i do not have information",
         "i don't have enough information",
-        "please connect with our support",
-        "please contact our support",
-        "please reach out to our support",
         "i cannot help with this",
         "i'm unable to assist",
         "i am unable to assist",
@@ -134,15 +141,22 @@ function _isAIRefusal(text) {
  * @param {string|null} personalProvider - Optional provider name (gemini, openai, claude, groq)
  * @returns {Promise<string>} The generated reply or fallback message
  */
+
 async function generateAutoReply(context, customerMessage, personalApiKey = null, personalModel = null, personalProvider = null) {
     const apiKey = personalApiKey || process.env.GEMINI_API_KEY;
-    const provider = (personalApiKey ? personalProvider : 'gemini') || 'gemini';
+    // Guard against a stored personal key with a missing/blank provider silently
+    // being treated as Gemini (would throw auth errors against the wrong SDK).
+    const provider = personalApiKey
+        ? (personalProvider || 'gemini')
+        : 'gemini';
+
+    if (personalApiKey && !personalProvider) {
+        console.warn('[AutoReply] personalApiKey set but api_provider is empty in DB — defaulting to gemini. Verify project_agent_api_keys row.');
+    }
 
     const hasContext = context && context.trim() !== '';
 
-    // If there is no context AND no API key, return the no-context fallback directly
     if (!hasContext) {
-        console.log("hello world");
         return FALLBACK_NO_CONTEXT;
     }
 
@@ -174,11 +188,10 @@ ${context}
 
         if (provider === 'gemini') {
             const aiInstance = personalApiKey ? new GoogleGenerativeAI(personalApiKey) : genAI;
-            
-            // Map custom UI labels (e.g. "Gemini 3.1 Pro (High)") to valid Google model names
+
             let rawModel = personalModel || "gemini-2.0-flash";
             let modelName = rawModel;
-            
+
             if (!modelName.toLowerCase().startsWith('gemini-') && !modelName.toLowerCase().startsWith('learnlm-')) {
                 const lower = modelName.toLowerCase();
                 if (lower.includes('pro')) {
@@ -191,19 +204,32 @@ ${context}
                 console.log(`[AutoReply] Mapped UI model name "${rawModel}" to valid API model "${modelName}"`);
             }
 
-            const model = aiInstance.getGenerativeModel({ 
-                model: modelName,
-                systemInstruction: systemPrompt 
-            });
+            const callGemini = async (modelToUse) => {
+                const model = aiInstance.getGenerativeModel({
+                    model: modelToUse,
+                    systemInstruction: systemPrompt
+                });
+                const chat = model.startChat({
+                    generationConfig: { temperature: 0.2 },
+                });
+                const result = await chat.sendMessage(customerMessage);
+                return result.response.text().trim();
+            };
 
-            const chat = model.startChat({
-                generationConfig: {
-                    temperature: 0.2,
-                },
-            });
-
-            const result = await chat.sendMessage(customerMessage);
-            responseText = result.response.text().trim();
+            try {
+                responseText = await callGemini(modelName);
+            } catch (primaryErr) {
+                // If the configured model itself is the problem (bad name, not enabled
+                // for this key, etc.), retry once on a known-safe fallback model instead
+                // of silently returning the generic fallback message.
+                console.error(`[AutoReply] Gemini call failed on model "${modelName}": ${primaryErr?.message || primaryErr}`);
+                if (modelName !== 'gemini-1.5-flash') {
+                    console.log('[AutoReply] Retrying with fallback model gemini-1.5-flash');
+                    responseText = await callGemini('gemini-1.5-flash');
+                } else {
+                    throw primaryErr;
+                }
+            }
 
         } else if (provider === 'openai') {
             const openai = new OpenAI({ apiKey });
@@ -245,7 +271,6 @@ ${context}
 
         console.log(`[AutoReply] Raw AI response: "${responseText}"`);
 
-        // If AI returned [FALLBACK] or a refusal-like message, use our own fallback
         if (_isAIRefusal(responseText)) {
             console.log(`[AutoReply] Detected AI refusal/fallback, using standard fallback message.`);
             return FALLBACK_NO_ANSWER;
