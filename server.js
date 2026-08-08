@@ -31,6 +31,12 @@ import { generateSummary } from "./generate-db-summary.js";
 import SetWebhookSubscription from "./helpers/SetWebhookSubscription.js";
 
 const app = express();
+
+// app.use((req, res, next) => {
+//     console.log(`[DEBUG] API called: ${req.method} ${req.originalUrl}`);
+//     next();
+// });
+
 app.use(cors({
     origin: "*",
     credentials: true
