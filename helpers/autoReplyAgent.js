@@ -142,6 +142,7 @@ async function generateAutoReply(context, customerMessage, personalApiKey = null
 
     // If there is no context AND no API key, return the no-context fallback directly
     if (!hasContext) {
+        console.log("hello world");
         return FALLBACK_NO_CONTEXT;
     }
 
@@ -173,20 +174,29 @@ ${context}
 
         if (provider === 'gemini') {
             const aiInstance = personalApiKey ? new GoogleGenerativeAI(personalApiKey) : genAI;
-            const modelName = personalModel || "gemini-2.0-flash";
-            const model = aiInstance.getGenerativeModel({ model: modelName });
+            
+            // Map custom UI labels (e.g. "Gemini 3.1 Pro (High)") to valid Google model names
+            let rawModel = personalModel || "gemini-2.0-flash";
+            let modelName = rawModel;
+            
+            if (!modelName.toLowerCase().startsWith('gemini-') && !modelName.toLowerCase().startsWith('learnlm-')) {
+                const lower = modelName.toLowerCase();
+                if (lower.includes('pro')) {
+                    modelName = 'gemini-1.5-pro';
+                } else if (lower.includes('flash')) {
+                    modelName = 'gemini-1.5-flash';
+                } else {
+                    modelName = 'gemini-2.0-flash';
+                }
+                console.log(`[AutoReply] Mapped UI model name "${rawModel}" to valid API model "${modelName}"`);
+            }
+
+            const model = aiInstance.getGenerativeModel({ 
+                model: modelName,
+                systemInstruction: systemPrompt 
+            });
 
             const chat = model.startChat({
-                history: [
-                    {
-                        role: "user",
-                        parts: [{ text: systemPrompt }],
-                    },
-                    {
-                        role: "model",
-                        parts: [{ text: "Understood. I will answer only from the context. If I cannot find the answer, I will output exactly [FALLBACK] and nothing else." }],
-                    },
-                ],
                 generationConfig: {
                     temperature: 0.2,
                 },
