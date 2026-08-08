@@ -338,7 +338,7 @@ router.post("/list-api-keys", auth, async (req, res) => {
         const agent_use_personal_key = projectRows[0].agent_use_personal_key === '1';
 
         const [keyRows] = await pool.query(
-            "SELECT unique_id, api_provider, api_model, api_key, is_active, create_date, create_by FROM project_agent_api_keys WHERE aisensy_project = ? AND is_deleted = '0' ORDER BY create_date DESC",
+            "SELECT unique_id, api_provider, api_key, is_active, create_date, create_by FROM project_agent_api_keys WHERE aisensy_project = ? AND is_deleted = '0' ORDER BY create_date DESC",
             [projectUniqueId]
         );
 
@@ -346,7 +346,6 @@ router.post("/list-api-keys", auth, async (req, res) => {
         const keys = keyRows.map(row => ({
             unique_id: row.unique_id,
             api_provider: row.api_provider,
-            api_model: row.api_model,
             api_key_masked: maskApiKey(row.api_key),
             is_active: row.is_active === '1',
             create_date: row.create_date,
@@ -385,7 +384,6 @@ router.post("/save-api-key", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;
     const api_provider = decrypt?.api_provider || 'gemini';
-    const api_model = decrypt?.api_model || null;
     const api_key = decrypt?.api_key;
 
     if (!project_id || !api_key) {
@@ -418,8 +416,8 @@ router.post("/save-api-key", auth, async (req, res) => {
         );
 
         await pool.query(
-            "INSERT INTO project_agent_api_keys (unique_id, aisensy_project, api_provider, api_model, api_key, is_active, create_date, create_by) VALUES (?, ?, ?, ?, ?, '1', ?, ?)",
-            [keyUniqueId, projectUniqueId, api_provider, api_model, api_key, TIMESTAMP(), username]
+            "INSERT INTO project_agent_api_keys (unique_id, aisensy_project, api_provider, api_key, is_active, create_date, create_by) VALUES (?, ?, ?, ?, '1', ?, ?)",
+            [keyUniqueId, projectUniqueId, api_provider, api_key, TIMESTAMP(), username]
         );
 
         return res.status(200).json({
@@ -427,7 +425,6 @@ router.post("/save-api-key", auth, async (req, res) => {
             data: {
                 unique_id: keyUniqueId,
                 api_provider,
-                api_model,
                 api_key_masked: maskApiKey(api_key),
                 is_active: true
             },
@@ -498,10 +495,6 @@ router.post("/update-api-key", auth, async (req, res) => {
             updates.push("api_provider = ?");
             values.push(decrypt.api_provider);
         }
-        if (decrypt?.api_model !== undefined) {
-            updates.push("api_model = ?");
-            values.push(decrypt.api_model);
-        }
         if (decrypt?.api_key !== undefined) {
             updates.push("api_key = ?");
             values.push(decrypt.api_key);
@@ -513,7 +506,7 @@ router.post("/update-api-key", auth, async (req, res) => {
         }
 
         if (updates.length === 0) {
-            return res.status(200).json({ error: 'No fields to update. Provide at least one of: api_provider, api_model, api_key, is_active' });
+            return res.status(200).json({ error: 'No fields to update. Provide at least one of: api_provider, api_key, is_active' });
         }
 
         updates.push("modify_by = ?");

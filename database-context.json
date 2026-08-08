@@ -411,15 +411,6 @@
           "comment": null
         },
         {
-          "name": "api_model",
-          "type": "varchar(100)",
-          "nullable": true,
-          "key": null,
-          "default": "NULL",
-          "extra": null,
-          "comment": null
-        },
-        {
           "name": "api_key",
           "type": "text",
           "nullable": false,

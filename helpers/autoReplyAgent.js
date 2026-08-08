@@ -13,11 +13,10 @@ const FALLBACK_NO_CONTEXT = "Sorry, I don't have information about your query. P
 const FALLBACK_NO_ANSWER = "Sorry, your query doesn't match any information we have. Please connect with our support team for further assistance.";
 const FALLBACK_TOKEN = "[FALLBACK]";
 
-// Default models used only when no personal model is configured for a provider.
-// These are NOT enforced/validated — whatever model name is stored in
-// project_agent_api_keys.api_model is passed straight to the provider's SDK.
+// Default models per provider. The model is always determined by the provider;
+// there is no per-key model override in the DB.
 const DEFAULT_MODELS = {
-    gemini: "gemini-2.0-flash",
+    gemini: "gemini-3.6-flash",
     openai: "gpt-4o",
     claude: "claude-3-5-sonnet-latest",
     groq: "llama-3.3-70b-versatile",
@@ -193,7 +192,7 @@ async function generateAutoReply(context, customerMessage, apiKey, provider, mod
 async function resolveProviderConfig(connection, projectUniqueId, agentUsePersonalKey) {
     if (agentUsePersonalKey === "1") {
         const [keyRows] = await connection.query(
-            "SELECT api_key, api_model, api_provider FROM project_agent_api_keys WHERE aisensy_project = ? AND is_active = '1' AND is_deleted = '0' ORDER BY create_date DESC LIMIT 1",
+            "SELECT api_key, api_provider FROM project_agent_api_keys WHERE aisensy_project = ? AND is_active = '1' AND is_deleted = '0' ORDER BY create_date DESC LIMIT 1",
             [projectUniqueId]
         );
 
@@ -202,7 +201,7 @@ async function resolveProviderConfig(connection, projectUniqueId, agentUsePerson
             return {
                 apiKey: keyRows[0].api_key,
                 provider: PROVIDER_HANDLERS[provider] ? provider : "gemini",
-                model: keyRows[0].api_model || null,
+                model: null, // model is always the default for the provider
             };
         }
 
