@@ -39,7 +39,9 @@ router.post("/chat-list", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt.project_id;
     var page_no = Number(decrypt.page_no || 1);
+    var search = decrypt.search || '';
 
+    // console.log("search = > ",search);
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' })
@@ -48,7 +50,17 @@ router.post("/chat-list", auth, async (req, res) => {
     const limit = 100;
     const offset = (page_no - 1) * limit;
 
-    var [rows] = await pool.query("SELECT m.*, contacts.name, CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, (SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count FROM messages m INNER JOIN (SELECT project_id, number, MAX(id) AS last_id FROM messages GROUP BY project_id, number) AS last_msg ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id LEFT JOIN contacts ON contacts.number = m.number AND contacts.project_id = m.project_id AND contacts.is_deleted = '0' LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' WHERE m.project_id = ? GROUP BY m.id, contacts.name ORDER BY last_msg.last_id DESC LIMIT ?, ?", [username, project_id, offset, limit]);
+    let queryArgs = [username, project_id];
+    let searchCondition = "";
+    if (search) {
+        searchCondition = " AND (contacts.name LIKE ? OR m.number LIKE ?) ";
+        const searchPattern = `%${search}%`;
+        queryArgs.push(searchPattern, searchPattern);
+    }
+    
+    queryArgs.push(offset, limit);
+
+    var [rows] = await pool.query("SELECT m.*, contacts.name, CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, (SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count FROM messages m INNER JOIN (SELECT project_id, number, MAX(id) AS last_id FROM messages GROUP BY project_id, number) AS last_msg ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id LEFT JOIN contacts ON contacts.number = m.number AND contacts.project_id = m.project_id AND contacts.is_deleted = '0' LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' WHERE m.project_id = ? " + searchCondition + " GROUP BY m.id, contacts.name ORDER BY last_msg.last_id DESC LIMIT ?, ?", queryArgs);
 
 
     const res_data = [];
