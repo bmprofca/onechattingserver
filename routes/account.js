@@ -712,4 +712,55 @@ router.post("/change-password", auth, async (req, res) => {
 
 });
 
+// ==========================================
+// AI Agent Bills API
+// ==========================================
+
+router.get("/ai-bills", async (req, res) => {
+    try {
+        const page_no = Number(req.query.page) || 1;
+        let limit = Number(req.query.limit) || 20;
+        limit = limit > 100 ? 100 : limit;
+        const offset = (page_no - 1) * limit;
+
+        const project_id = req.query.project_id || '';
+        const username = req.query.username || '';
+
+        let queryParams = [];
+        let whereClause = "1=1";
+
+        if (project_id) {
+            whereClause += " AND project_id = ?";
+            queryParams.push(project_id);
+        }
+
+        if (username) {
+            whereClause += " AND username = ?";
+            queryParams.push(username);
+        }
+
+        const countQuery = `SELECT COUNT(*) as total FROM ai_agent_bills WHERE ${whereClause}`;
+        const [[countResult]] = await pool.query(countQuery, queryParams);
+        const total_records = countResult?.total || 0;
+        const total_pages = Math.ceil(total_records / limit);
+
+        const selectQuery = `SELECT * FROM ai_agent_bills WHERE ${whereClause} ORDER BY id DESC LIMIT ? OFFSET ?`;
+        const [rows] = await pool.query(selectQuery, [...queryParams, limit, offset]);
+
+        return res.status(200).json({
+            error: false,
+            data: rows,
+            pagination: {
+                page: page_no,
+                limit,
+                total_records,
+                total_pages,
+                has_more: page_no < total_pages
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
 export default router

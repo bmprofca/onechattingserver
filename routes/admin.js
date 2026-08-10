@@ -1304,5 +1304,81 @@ router.post("/debit-wallet/:username", async (req, res) => {
     }
 });
 
-export default router;
+// ==========================================
+// Global AI Providers CRUD APIs
+// ==========================================
 
+router.get("/ai-providers", async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            "SELECT id, provider, api_key, is_active, create_date, modify_date FROM global_ai_api_keys ORDER BY id DESC"
+        );
+        return res.status(200).json({ error: false, data: rows });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+router.post("/ai-providers", async (req, res) => {
+    try {
+        const { provider, api_key, is_active } = req.body || {};
+
+        if (!provider || !api_key) {
+            return res.status(400).json({ error: "provider and api_key are required" });
+        }
+
+        const activeStatus = is_active !== undefined ? is_active : '1';
+
+        await pool.query(
+            "INSERT INTO global_ai_api_keys (provider, api_key, is_active) VALUES (?, ?, ?)",
+            [provider, api_key, activeStatus]
+        );
+
+        return res.status(200).json({ error: false, message: "AI provider added successfully" });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+router.put("/ai-providers/:id", async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { provider, api_key, is_active } = req.body || {};
+
+        if (!provider || !api_key) {
+            return res.status(400).json({ error: "provider and api_key are required" });
+        }
+
+        const activeStatus = is_active !== undefined ? is_active : '1';
+
+        const [result] = await pool.query(
+            "UPDATE global_ai_api_keys SET provider = ?, api_key = ?, is_active = ? WHERE id = ?",
+            [provider, api_key, activeStatus, id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "AI provider not found" });
+        }
+
+        return res.status(200).json({ error: false, message: "AI provider updated successfully" });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+router.delete("/ai-providers/:id", async (req, res) => {
+    try {
+        const id = req.params.id;
+        const [result] = await pool.query("DELETE FROM global_ai_api_keys WHERE id = ?", [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "AI provider not found" });
+        }
+
+        return res.status(200).json({ error: false, message: "AI provider deleted successfully" });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+export default router;

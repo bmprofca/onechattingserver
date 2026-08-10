@@ -5,6 +5,7 @@ import { startCampaignScheduler } from "../helpers/campaign/scheduler.js";
 import { AISENSY_API_KEY, AISENSY_PARTNER_ID } from "../helpers/Config.js";
 import { GET_ACTIVE_BILLING_PROJECT_IDS, TODAY_DATE } from "../helpers/function.js";
 import SetWebhookSubscription from "../helpers/SetWebhookSubscription.js";
+import { generateAiBills } from "../cron/aiBilling.js";
 
 const DEFAULT_TIMEZONE = "Asia/Kolkata";
 const BILLING_CRON_ENABLED = process.env.BILLING_CRON_ENABLED !== "false";
@@ -84,4 +85,13 @@ export function startCronJobs() {
             }
         });
     }
+
+    // Run AI billing every day at 00:05 AM
+    schedule("5 0 * * *", async () => {
+        try {
+            await generateAiBills();
+        } catch (error) {
+            console.error("[cron] generateAiBills error:", error?.message || error);
+        }
+    });
 }
