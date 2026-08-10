@@ -7,6 +7,52 @@ import { auth } from "../middleware/auth.js";
 import { GOOGLE_CLIENT_ID } from "../helpers/Config.js";
 import { OAuth2Client } from "google-auth-library";
 import { sendPasswordResetEmail } from "../helpers/email.js";
+import { sendOtpSms } from "../helpers/sms.js";
+import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
+
+router.post("/send-otp", async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const mobile = decrypt.mobile;
+
+    if (!mobile) {
+        return res.status(200).json({ error: 'Mobile number is required' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expire_date = FUTURE_TIMESTAMP(10); // 10 minutes expiry
+
+    const conn = await pool.getConnection();
+    try {
+        await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')", [mobile, otp, expire_date]);
+        await conn.commit();
+        
+        try {
+            await sendOtpWhatsApp(mobile, otp);
+            await sendOtpSms(mobile, otp);
+        } catch (error) {
+            console.error("Failed to send OTP:", error);
+            // Optionally, handle failure (e.g. continue or throw)
+        }
+        
+        return res.status(200).json({ error: false, msg: 'OTP sent successfully' });
+    } catch (error) {
+        await conn.rollback();
+        console.error("OTP send error:", error);
+        return res.status(200).json({ error: 'Failed to send OTP' });
+    } finally {
+        conn.release();
+    }
+});
 
 router.post("/login", async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
@@ -20,29 +66,27 @@ router.post("/login", async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    const email = decrypt.email;
-    const password = decrypt.password;
-    // const captcha_token = decrypt?.captcha_token;
-    // console.log("email :", email, "password :", password);
+    const mobile = decrypt.mobile;
+    const otp = decrypt.otp;
 
-    if (!email || !password) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+    if (!mobile || !otp) {
+        return res.status(200).json({ error: 'Provide mobile and OTP' });
     }
-    // if (!captcha_token) {
-    //     console.log("captcha_token :", captcha_token);
-    //     return res.status(200).json({ error: 'Captcha verification is required' });
-    // }
 
-    // // const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
-    // if (!isValidCaptcha) {
-    //     return res.status(200).json({ error: 'Captcha verification failed. Please try again.' });
-    // }
+    const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
 
-    const [data_row] = await pool.query("SELECT * FROM users WHERE email = ? AND password = ?", [email, password]);
-
-    if (data_row.length !== 1) {
-        return res.status(200).json({ error: 'Username or password is wrong' })
+    if (otp_row.length === 0) {
+        return res.status(200).json({ error: 'Invalid or expired OTP' });
     }
+
+    const [data_row] = await pool.query("SELECT * FROM users WHERE mobile = ?", [mobile]);
+
+    if (data_row.length === 0) {
+        return res.status(200).json({ error: 'User not registered. Please sign up.' })
+    }
+
+    // Mark OTP as verified
+    await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
 
     const user_data = data_row[0];
     const username = user_data.username;
@@ -53,7 +97,6 @@ router.post("/login", async (req, res) => {
 
     const name = user_data.name;
     const country_code = user_data.country_code;
-    const mobile = user_data.mobile;
     const db_email = user_data.email;
 
     const [project_row] = await pool.query("SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = ? AND aisensy_projects.status = ?", [username, '0', '1']);
@@ -74,7 +117,6 @@ router.post("/login", async (req, res) => {
 
     const project_count = projects.length;
 
-    // console.log("login successfully",);
     return res.status(200).json({
         error: false,
         username: username,
@@ -103,47 +145,36 @@ router.post("/register", async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    const email = decrypt.email;
-    const password = decrypt.password;
-    const confirm_password = decrypt.confirm_password;
     const name = decrypt.name;
     const firm_name = decrypt.firm_name;
     const mobile = decrypt.mobile;
     const country_code = decrypt.country_code;
-    // const captcha_token = decrypt?.captcha_token;
+    const otp = decrypt.otp;
+    const email = decrypt.email || '';
 
-    if (!email || !password || !confirm_password || !name || !firm_name || !mobile || !country_code) {
+    if (!name || !firm_name || !mobile || !country_code || !otp) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
     }
-    // if (!captcha_token) {
-    //     return res.status(200).json({ error: 'Captcha verification is required' });
-    // }
 
-    // const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
-    // if (!isValidCaptcha) {
-    //     return res.status(200).json({ error: 'Captcha verification failed. Please try again.' });
-    // }
+    const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
 
-    if (password !== confirm_password) {
-        return res.status(200).json({ error: 'Password & confirm password not matched' });
+    if (otp_row.length === 0) {
+        return res.status(200).json({ error: 'Invalid or expired OTP' });
     }
 
-    if (!IS_STRONG_PASSWORD(password)) {
-        return res.status(200).json({ error: 'Please provide a strong password' });
-    }
-
-
-    const [data_row] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
+    const [data_row] = await pool.query("SELECT * FROM users WHERE mobile = ?", [mobile]);
 
     if (data_row.length !== 0) {
-        return res.status(200).json({ error: 'Email already registered' })
+        return res.status(200).json({ error: 'Mobile number already registered' })
     }
-
 
     const conn = await pool.getConnection();
     try {
         var username = RANDOM_STRING(20);
-        await pool.query("INSERT INTO `users`(`username`, `password`, `email`, `name`, `country_code`, `mobile`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`,`firm_name`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [username, password, email, name, country_code, mobile, TIMESTAMP(), username, TIMESTAMP(), username, '1', firm_name]);
+        await pool.query("INSERT INTO `users`(`username`, `email`, `name`, `country_code`, `mobile`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`,`firm_name`) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [username, email, name, country_code, mobile, TIMESTAMP(), username, TIMESTAMP(), username, '1', firm_name]);
+        
+        // Mark OTP as verified
+        await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
 
         await conn.commit();
 
@@ -151,9 +182,9 @@ router.post("/register", async (req, res) => {
         await conn.rollback();
         console.log(`Register error ${error}`);
         return res.status(200).json({ error: 'Failed to register' })
+    } finally {
+        conn.release();
     }
-
-
 
     // GENERATE TOKEN
     const token = RANDOM_STRING(50);
@@ -176,11 +207,9 @@ router.post("/register", async (req, res) => {
 
     const project_count = projects.length;
 
-
     return res.status(200).json({
         error: false,
         username: username,
-        password,
         token: token,
         profile: {
             name,
@@ -472,8 +501,7 @@ router.post('/google-register', async (req, res) => {
 
 
         var username = RANDOM_STRING(20);
-        var password = GENERATE_PASSWORD(8);
-        await pool.query("INSERT INTO `users`(`username`, `password`, `email`, `name`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`) VALUES (?,?,?,?,?,?,?,?,?)", [username, password, email, name, TIMESTAMP(), username, TIMESTAMP(), username, '1']);
+        await pool.query("INSERT INTO `users`(`username`, `email`, `name`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`) VALUES (?,?,?,?,?,?,?,?)", [username, email, name, TIMESTAMP(), username, TIMESTAMP(), username, '1']);
 
 
         const login_token = RANDOM_STRING(50);
@@ -535,181 +563,19 @@ router.post("/session-check", auth, async (req, res) => {
 
 });
 
-router.post("/reset-password", async (req, res) => {
+router.post("/logout", auth, async (req, res) => {
     try {
-        let data = req.body?.data || "";
-        let key = req.body?.key || "";
-        if (req.body && Object.keys(req.body).length > 0) {
-            data = req.body.data || "";
-            key = req.body.key || "";
+        const token = req.headers["token"];
+        if (token) {
+            await pool.query("UPDATE `login_token` SET status = '0' WHERE token = ?", [token]);
         }
-
-        const decrypt = Decrypt(data, key);
-        if (!decrypt) {
-            return res.status(200).json({ error: "Failed to decrypt data" });
-        }
-
-        const token = (decrypt?.token ?? "").toString().trim();
-        const captcha_token = decrypt?.captcha_token;
-        const password = decrypt?.password;
-
-        if (!token) {
-            return res.status(200).json({ error: "Token is required" });
-        }
-        if (!captcha_token) {
-            return res.status(200).json({ error: "Captcha verification is required" });
-        }
-        if (!password) {
-            return res.status(200).json({ error: "Password is required" });
-        }
-
-        const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
-        if (!isValidCaptcha) {
-            return res.status(200).json({ error: "Captcha verification failed. Please try again." });
-        }
-
-        if (!IS_STRONG_PASSWORD(password)) {
-            return res.status(200).json({ error: "Please provide a strong password" });
-        }
-
-        const [resetRows] = await pool.query(
-            "SELECT * FROM password_resets WHERE token = ? AND status = ? AND expire_date > NOW()",
-            [token, "0"]
-        );
-        if (resetRows.length === 0) {
-            return res.status(200).json({ error: "Invalid or expired reset token. Please request a new password reset." });
-        }
-
-        const resetRow = resetRows[0];
-        const username = resetRow.username;
-
-        await pool.query("UPDATE users SET password = ?, modify_date = ?, modify_by = ? WHERE username = ?", [password, TIMESTAMP(), username, username]);
-        await pool.query("UPDATE login_token SET status = ? WHERE username = ? AND status = ?", ["0", username, "1"]);
-        await pool.query("UPDATE password_resets SET status = ? WHERE token = ?", ["1", token]);
-
         return res.status(200).json({
             error: false,
-            msg: "Password reset successfully. Please login with your new password."
+            msg: "Logged out successfully"
         });
     } catch (err) {
-        console.error("[reset-password] Error:", err?.message || err);
-        return res.status(200).json({ error: "Failed to reset password" });
+        return res.status(200).json({ error: "Failed to logout" });
     }
-});
-
-router.post("/reset-password-request", async (req, res) => {
-    try {
-        let data = req.body?.data || "";
-        let key = req.body?.key || "";
-        if (req.body && Object.keys(req.body).length > 0) {
-            data = req.body.data || "";
-            key = req.body.key || "";
-        }
-
-        const decrypt = Decrypt(data, key);
-        if (!decrypt) {
-            return res.status(200).json({ error: "Failed to decrypt data" });
-        }
-
-        const email = (decrypt?.email ?? "").toString().trim();
-        const captcha_token = decrypt?.captcha_token;
-
-        if (!email) {
-            return res.status(200).json({ error: "Email is required" });
-        }
-        if (!captcha_token) {
-            return res.status(200).json({ error: "Captcha verification is required" });
-        }
-
-        const isValidCaptcha = await validateTurnstileToken(captcha_token, req.ip || req.socket?.remoteAddress);
-        if (!isValidCaptcha) {
-            return res.status(200).json({ error: "Captcha verification failed. Please try again." });
-        }
-
-        const [userRows] = await pool.query("SELECT username, name FROM users WHERE email = ? AND status = ?", [email, "1"]);
-        if (userRows.length === 0) {
-            return res.status(200).json({ error: false, msg: "If this email exists, a password reset link has been sent." });
-        }
-
-        const user = userRows[0];
-        const username = user.username;
-        const userName = user.name || "User";
-        const token = RANDOM_STRING(50);
-        const expire_date = FUTURE_TIMESTAMP(5);
-
-        await pool.query(
-            "INSERT INTO password_resets (username, email, create_date, create_ip, status, expire_date, token) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [username, email, TIMESTAMP(), req.ip || req.socket?.remoteAddress || null, "0", expire_date, token]
-        );
-
-        const sent = await sendPasswordResetEmail(email, token, userName);
-        if (!sent) {
-            return res.status(200).json({ error: "Failed to send reset email. Please try again later." });
-        }
-
-        return res.status(200).json({
-            error: false,
-            msg: "If this email exists, a password reset link has been sent."
-        });
-    } catch (err) {
-        console.error("[password-reset] Error:", err?.message || err);
-        return res.status(200).json({ error: "Failed to process request" });
-    }
-});
-
-router.post("/change-password", auth, async (req, res) => {
-    if (req.body && Object.keys(req.body).length > 0) {
-        var data = req.body?.data || '';
-        var key = req.body?.key || '';
-    }
-
-    const decrypt = Decrypt(data, key);
-
-    if (!decrypt) {
-        return res.status(200).json({ error: 'Failed to decrypt data' });
-    }
-
-    const username = req.headers["username"] ? req.headers["username"] : '';
-    const old_password = decrypt?.old_password;
-    const new_password = decrypt?.new_password;
-
-
-
-    const is_strong = IS_STRONG_PASSWORD(new_password);
-
-    if (is_strong == false) {
-        return res.status(200).json({ error: 'Please provide a strong password' });
-    }
-
-    if (!old_password || !new_password) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
-    }
-
-    try {
-
-        const [check_row] = await pool.query("SELECT * FROM users WHERE username = ? AND password = ?", [username, old_password]);
-        if (check_row.length == 0) {
-            return res.status(200).json({ error: 'Old password is wrong' });
-        }
-
-        await pool.query("UPDATE `users` SET `password`=?,`modify_date`=?,`modify_by`=? WHERE username = ?", [new_password, TIMESTAMP(), username, username]);
-
-        await pool.query("UPDATE `login_token` SET status = '2' WHERE username = ? AND status = '1'", [username]);
-
-
-        return res.status(200).json({
-            error: false,
-            msg: 'Password changed successfully'
-        })
-
-    } catch (error) {
-        return res.status(200).json({
-            error: 'Failed to change password',
-            e: error
-        })
-    }
-
-
 });
 
 // ==========================================
