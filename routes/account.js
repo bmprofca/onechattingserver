@@ -30,6 +30,7 @@ router.post("/send-otp", async (req, res) => {
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expire_date = FUTURE_TIMESTAMP(10); // 10 minutes expiry
+    // console.log("OTP", otp);
 
     const conn = await pool.getConnection();
     try {
@@ -257,6 +258,10 @@ router.post("/profile", auth, async (req, res) => {
     }
 
     const user_data = data_row[0];
+
+    if (user_data.role !== 'user') {
+        return res.status(200).json({ error: 'Unauthorized access! You are not a Enduser' })
+    }
 
     const name = user_data.name;
     const country_code = user_data.country_code;
