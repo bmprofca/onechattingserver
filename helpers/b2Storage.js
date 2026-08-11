@@ -141,7 +141,7 @@ export function isAllowedProxyObjectKey(objectKey) {
     if (!key || key.includes("..") || key.startsWith("/") || path.isAbsolute(key)) {
         return false;
     }
-    return key.startsWith("chat/") || key.startsWith("templates/");
+    return key.startsWith("chat/") || key.startsWith("templates/") || key.startsWith("context-docs/");
 }
 
 async function getDownloadAuthorization(fileNamePrefix) {

@@ -584,49 +584,76 @@ router.post("/logout", auth, async (req, res) => {
 });
 
 // ==========================================
-// AI Agent Bills API
+// AI auto-reply charges for the currently authenticated user. Charges are
+// debited from the user's wallet and stored in the transactions ledger.
 // ==========================================
 
-router.get("/ai-bills", async (req, res) => {
+router.get("/ai-bills", auth, async (req, res) => {
     try {
-        const page_no = Number(req.query.page) || 1;
-        let limit = Number(req.query.limit) || 20;
-        limit = limit > 100 ? 100 : limit;
-        const offset = (page_no - 1) * limit;
+        const username = req.headers["username"];
+        const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 100);
+        const projectId = String(req.query.project_id || '').trim();
+        const fromDate = String(req.query.from_date || '').trim();
+        const toDate = String(req.query.to_date || '').trim();
+        const validDate = /^\d{4}-\d{2}-\d{2}$/;
 
-        const project_id = req.query.project_id || '';
-        const username = req.query.username || '';
-
-        let queryParams = [];
-        let whereClause = "1=1";
-
-        if (project_id) {
-            whereClause += " AND project_id = ?";
-            queryParams.push(project_id);
+        if ((fromDate && !validDate.test(fromDate)) || (toDate && !validDate.test(toDate))) {
+            return res.status(400).json({ error: 'from_date and to_date must use YYYY-MM-DD format.' });
+        }
+        if (fromDate && toDate && fromDate > toDate) {
+            return res.status(400).json({ error: 'from_date cannot be later than to_date.' });
         }
 
-        if (username) {
-            whereClause += " AND username = ?";
-            queryParams.push(username);
+        const conditions = [
+            'username = ?',
+            "transaction_type = 'ai auto reply bill'",
+            "type = '0'"
+        ];
+        const params = [username];
+
+        if (projectId) {
+            conditions.push('project_id = ?');
+            params.push(projectId);
+        }
+        if (fromDate) {
+            conditions.push('DATE(create_date) >= ?');
+            params.push(fromDate);
+        }
+        if (toDate) {
+            conditions.push('DATE(create_date) <= ?');
+            params.push(toDate);
         }
 
-        const countQuery = `SELECT COUNT(*) as total FROM ai_agent_bills WHERE ${whereClause}`;
-        const [[countResult]] = await pool.query(countQuery, queryParams);
-        const total_records = countResult?.total || 0;
-        const total_pages = Math.ceil(total_records / limit);
-
-        const selectQuery = `SELECT * FROM ai_agent_bills WHERE ${whereClause} ORDER BY id DESC LIMIT ? OFFSET ?`;
-        const [rows] = await pool.query(selectQuery, [...queryParams, limit, offset]);
+        const whereClause = conditions.join(' AND ');
+        const [[countResult]] = await pool.query(
+            `SELECT COUNT(*) AS total, COALESCE(SUM(amount), 0) AS total_amount
+             FROM transactions WHERE ${whereClause}`,
+            params
+        );
+        const totalRecords = Number(countResult?.total || 0);
+        const [rows] = await pool.query(
+            `SELECT transaction_id, project_id, amount, transaction_type, remark, create_date
+             FROM transactions
+             WHERE ${whereClause}
+             ORDER BY create_date DESC, id DESC
+             LIMIT ? OFFSET ?`,
+            [...params, limit, (page - 1) * limit]
+        );
 
         return res.status(200).json({
             error: false,
             data: rows,
+            summary: {
+                total_bills: totalRecords,
+                total_amount: Number(countResult?.total_amount || 0)
+            },
             pagination: {
-                page: page_no,
+                page,
                 limit,
-                total_records,
-                total_pages,
-                has_more: page_no < total_pages
+                total_records: totalRecords,
+                total_pages: Math.ceil(totalRecords / limit),
+                has_more: page * limit < totalRecords
             }
         });
     } catch (error) {

@@ -60,9 +60,16 @@ export async function generateAiBills() {
 
             const username = ownerRows[0].username;
 
-            // Check if bill already exists for this date and project
+            // Keep one daily ledger charge per project. ai_agent_bills is not
+            // part of every deployment, so use the transactions ledger itself
+            // as the source of truth and idempotency check.
             const [existingBillRows] = await connection.query(
-                "SELECT id FROM ai_agent_bills WHERE project_id = ? AND bill_date = ?",
+                `SELECT id FROM transactions
+                 WHERE project_id = ?
+                   AND transaction_type = 'ai auto reply bill'
+                   AND type = '0'
+                   AND DATE(create_date) = ?
+                 LIMIT 1`,
                 [project_id, billDateStr]
             );
 
@@ -71,13 +78,7 @@ export async function generateAiBills() {
                 continue;
             }
 
-            // Insert into ai_agent_bills
-            await connection.query(
-                "INSERT INTO ai_agent_bills (project_id, username, bill_date, bill_amount, usage_count, create_date) VALUES (?, ?, ?, ?, ?, ?)",
-                [project_id, username, billDateStr, bill_amount, usage_count, TIMESTAMP()]
-            );
-
-            // Deduct from wallet if bill > 0
+            // The wallet balance is calculated from this debit transaction.
             if (bill_amount > 0) {
                 await connection.query(
                     "INSERT INTO transactions (transaction_id, username, project_id, amount, type, transaction_type, remark, create_date, create_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

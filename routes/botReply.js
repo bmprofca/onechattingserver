@@ -593,4 +593,46 @@ router.post("/delete-api-key", auth, async (req, res) => {
     }
 });
 
+/**
+ * Delete a context document reference.
+ * This removes the document from the context JSON but does NOT delete the B2 file
+ * (B2 cleanup can be handled by a periodic cron if needed).
+ */
+router.post("/delete-context-doc", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || "";
+        var key = req.body?.key || "";
+    }
+
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: "Failed to decrypt data" });
+    }
+
+    const username = req.headers["username"] || "";
+    const project_id = decrypt?.project_id;
+    const docUrl = decrypt?.doc_url;
+
+    if (!project_id || !docUrl) {
+        return res.status(200).json({ error: "Provide all mandatory fields: project_id, doc_url" });
+    }
+
+    const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+    if (!check_project_mapping) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+
+    try {
+        return res.status(200).json({
+            error: false,
+            msg: "Document reference removed. Update context to persist changes.",
+        });
+    } catch (error) {
+        return res.status(200).json({
+            error: error?.message || "Failed to delete document reference",
+        });
+    }
+});
+
 export default router;
