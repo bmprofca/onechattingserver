@@ -29,6 +29,7 @@ import developerRouter from "./developerRoutes/index.js";
 import developerSettingsRouter from "./routes/developer.js";
 import { generateSummary } from "./generate-db-summary.js";
 import SetWebhookSubscription from "./helpers/SetWebhookSubscription.js";
+import subscriptionRouter from "./routes/subscription.js";
 
 const app = express();
 
@@ -139,6 +140,7 @@ app.use("/payment", paymentRouter);
 app.use("/company", companyRouter);
 app.use("/test", testRouter);
 app.use("/bot-reply", botReplyRouter);
+app.use("/subscription", subscriptionRouter);
 
 app.use("/admin", adminRouter);
 app.use("/plan", planRouter);

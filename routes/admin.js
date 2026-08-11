@@ -1,7 +1,6 @@
 
 import express from 'express';
 import {
-    getAdminByUsername,
     getAdminByToken,
     invalidateToken,
     getUsers,
@@ -11,6 +10,7 @@ import {
     getUserProfileAndStatsForAdmin,
     updateUserStatus,
     getProjects,
+    getProjectsCount,
     getProjectById,
     getDashboardSummary,
     updateProjectCharges
@@ -30,6 +30,18 @@ import {
 } from '../helpers/Config.js';
 
 const router = express.Router();
+
+const getPagination = (query, defaultLimit = 50) => {
+    const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(Number.parseInt(query.limit, 10) || defaultLimit, 1), 100);
+    return { page, limit, offset: (page - 1) * limit };
+};
+
+const getOptionalFilter = (query, field, allowedValues) => {
+    if (query[field] === undefined || query[field] === '') return undefined;
+    const value = String(query[field]).trim();
+    return !allowedValues || allowedValues.includes(value) ? value : null;
+};
 
 
 const authAdmin = async (req, res, next) => {
@@ -167,82 +179,10 @@ router.post('/verify-otp', async (req, res) => {
     }
 });
 
-router.post('/login', async (req, res) => {
-    if (req.body && Object.keys(req.body).length > 0) {
-        var data = req.body?.data || '';
-        var key = req.body?.key || '';
-    }
-
-    const decrypt = Decrypt(data, key);
-
-    if (!decrypt) {
-        return res.status(200).json({ error: 'Failed to decrypt data' });
-    }
-
-    const identifier = decrypt.username || decrypt.email;
-    const password = decrypt.password;
-
-    if (!identifier || !password) {
-        return res
-            .status(400)
-            .json({ error: 'Username/email and password are required.' });
-    }
-    try {
-        // Try to find by username first, then by email if not found
-        let user = await getAdminByUsername(identifier);
-        if (!user) {
-            // Try by email
-            const [rows] = await pool.query(
-                "SELECT id, username, email, password, role, name, country_code, mobile FROM users WHERE email = ? AND role = 'admin' LIMIT 1",
-                [identifier]
-            );
-            user = rows[0] || null;
-        }
-
-        if (!user || user.role !== 'admin') {
-            return res.status(401).json({ error: 'Invalid credentials.' });
-        }
-
-        // If you later store hashed passwords, swap this for bcrypt.compare
-        // const match = await bcrypt.compare(password, user.password);
-        // if (!match) { ... }
-        if (user.password !== password) {
-            return res.status(401).json({ error: 'Invalid credentials.' });
-        }
-
-        // GENERATE TOKEN
-        const { RANDOM_STRING, TIMESTAMP, FUTURE_TIMESTAMP } = await import(
-            '../helpers/function.js'
-        );
-        const token = RANDOM_STRING(50);
-        await pool.query(
-            'INSERT INTO `login_token`(`username`, `create_date`, `create_by`, `modify_date`, `modify_by`, `token`, `expire_date`, `status`) VALUES (?,?,?,?,?,?,?,?)',
-            [
-                user.username,
-                TIMESTAMP(),
-                user.username,
-                TIMESTAMP(),
-                user.username,
-                token,
-                FUTURE_TIMESTAMP(43200),
-                '1'
-            ]
-        );
-
-        res.status(200).json({
-            error: false,
-            username: user.username,
-            token: token,
-            profile: {
-                name: user.name,
-                country_code: user.country_code,
-                mobile: user.mobile,
-                email: user.email
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ error: 'Server error.' });
-    }
+router.post('/login', (req, res) => {
+    return res.status(410).json({
+        error: 'Password login is no longer available. Use /admin/send-otp followed by /admin/verify-otp.'
+    });
 });
 
 
@@ -557,13 +497,20 @@ router.post('/logout', async (req, res) => {
 
 router.get('/users', async (req, res) => {
     try {
-        const page = parseInt(req.query.page, 10) || 1;
-        const limit = parseInt(req.query.limit, 10) || 50;
-        const offset = (page - 1) * limit;
+        const { page, limit, offset } = getPagination(req.query);
+        const filters = {
+            search: String(req.query.search || '').trim(),
+            status: getOptionalFilter(req.query, 'status', ['0', '1']),
+            role: getOptionalFilter(req.query, 'role'),
+            kyc_verified: getOptionalFilter(req.query, 'kyc_verified', ['0', '1'])
+        };
+        if (Object.values(filters).includes(null)) {
+            return res.status(400).json({ error: 'status and kyc_verified must be 0 or 1.' });
+        }
 
         const [list, total] = await Promise.all([
-            getUsers(limit, offset),
-            getUsersCount()
+            getUsers(limit, offset, filters),
+            getUsersCount(filters)
         ]);
 
         res.status(200).json({
@@ -572,7 +519,8 @@ router.get('/users', async (req, res) => {
             pagination: {
                 page,
                 limit,
-                total
+                total,
+                total_pages: Math.ceil(total / limit) || 1
             }
         });
     } catch (err) {
@@ -749,10 +697,28 @@ router.patch('/users/:id/status', async (req, res) => {
 
 router.get('/projects', async (req, res) => {
     try {
-        const projects = await getProjects();
+        const { page, limit, offset } = getPagination(req.query);
+        const filters = {
+            search: String(req.query.search || '').trim(),
+            status: getOptionalFilter(req.query, 'status'),
+            is_waba_connected: getOptionalFilter(req.query, 'is_waba_connected', ['0', '1'])
+        };
+        if (filters.is_waba_connected === null) {
+            return res.status(400).json({ error: 'is_waba_connected must be 0 or 1.' });
+        }
+        const [projects, total] = await Promise.all([
+            getProjects(limit, offset, filters),
+            getProjectsCount(filters)
+        ]);
         res.status(200).json({
             error: false,
-            data: projects
+            data: projects,
+            pagination: {
+                page,
+                limit,
+                total,
+                total_pages: Math.ceil(total / limit) || 1
+            }
         });
     } catch (err) {
         res.status(500).json({ error: 'Server error.' });
@@ -1418,10 +1384,34 @@ router.post("/debit-wallet/:username", async (req, res) => {
 
 router.get("/ai-providers", async (req, res) => {
     try {
-        const [rows] = await pool.query(
-            "SELECT id, provider, api_key, is_active, create_date, modify_date FROM global_ai_api_keys ORDER BY id DESC"
-        );
-        return res.status(200).json({ error: false, data: rows });
+        const { page, limit, offset } = getPagination(req.query, 20);
+        const filters = [];
+        const values = [];
+        const search = String(req.query.search || '').trim();
+        const isActive = getOptionalFilter(req.query, 'is_active', ['0', '1']);
+        if (isActive === null) return res.status(400).json({ error: 'is_active must be 0 or 1.' });
+        if (search) {
+            filters.push('provider LIKE ?');
+            values.push(`%${search}%`);
+        }
+        if (isActive !== undefined) {
+            filters.push('is_active = ?');
+            values.push(isActive);
+        }
+        const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+        const [[countRow], [rows]] = await Promise.all([
+            pool.query(`SELECT COUNT(*) AS total FROM global_ai_api_keys ${where}`, values),
+            pool.query(
+                `SELECT id, provider, api_key, is_active, create_date, modify_date FROM global_ai_api_keys ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+                [...values, limit, offset]
+            )
+        ]);
+        const total = Number(countRow?.total || 0);
+        return res.status(200).json({
+            error: false,
+            data: rows,
+            pagination: { page, limit, total, total_pages: Math.ceil(total / limit) || 1 }
+        });
     } catch (error) {
         return res.status(500).json({ error: "Server error.", e: error?.message });
     }

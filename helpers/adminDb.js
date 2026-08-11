@@ -1,15 +1,6 @@
 import pool from "../db.js";
 import { GET_BALANCE_BY_USERNAME, GET_PROJECTS_OF_USER } from "./function.js";
 
-// Get admin user by username
-export async function getAdminByUsername(username) {
-    const [rows] = await pool.query(
-        "SELECT id, username, email, password, role, name, country_code, mobile FROM users WHERE username = ? AND role = 'admin' LIMIT 1",
-        [username]
-    );
-    return rows[0] || null;
-}
-
 // Get admin user from an active token
 export async function getAdminByToken(token) {
     const [rows] = await pool.query(
@@ -43,12 +34,33 @@ export async function invalidateToken(token) {
 }
 
 // List users for admin panel (basic info only)
-export async function getUsers(limit = 50, offset = 0) {
+export async function getUsers(limit = 50, offset = 0, filters = {}) {
+    const where = [];
+    const values = [];
+    const search = String(filters.search || '').trim();
+
+    if (search) {
+        const like = `%${search}%`;
+        where.push('(username LIKE ? OR email LIKE ? OR mobile LIKE ? OR name LIKE ? OR firm_name LIKE ? OR business_name LIKE ?)');
+        values.push(like, like, like, like, like, like);
+    }
+    if (filters.status !== undefined) {
+        where.push('status = ?');
+        values.push(filters.status);
+    }
+    if (filters.role) {
+        where.push('role = ?');
+        values.push(filters.role);
+    }
+    if (filters.kyc_verified !== undefined) {
+        where.push('kyc_verified = ?');
+        values.push(filters.kyc_verified);
+    }
+
     const [rows] = await pool.query(
         `SELECT 
             username,
             email,
-            password,
             mobile,
             country_code,
             status,
@@ -61,9 +73,10 @@ export async function getUsers(limit = 50, offset = 0) {
             create_date,
             modify_date
         FROM users
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY id DESC
         LIMIT ? OFFSET ?`,
-        [Number(limit), Number(offset)]
+        [...values, Number(limit), Number(offset)]
     );
 
 
@@ -83,9 +96,32 @@ export async function getUsers(limit = 50, offset = 0) {
     return rows;
 }
 
-export async function getUsersCount() {
+export async function getUsersCount(filters = {}) {
+    const where = [];
+    const values = [];
+    const search = String(filters.search || '').trim();
+
+    if (search) {
+        const like = `%${search}%`;
+        where.push('(username LIKE ? OR email LIKE ? OR mobile LIKE ? OR name LIKE ? OR firm_name LIKE ? OR business_name LIKE ?)');
+        values.push(like, like, like, like, like, like);
+    }
+    if (filters.status !== undefined) {
+        where.push('status = ?');
+        values.push(filters.status);
+    }
+    if (filters.role) {
+        where.push('role = ?');
+        values.push(filters.role);
+    }
+    if (filters.kyc_verified !== undefined) {
+        where.push('kyc_verified = ?');
+        values.push(filters.kyc_verified);
+    }
+
     const [rows] = await pool.query(
-        "SELECT COUNT(*) AS total FROM users"
+        `SELECT COUNT(*) AS total FROM users ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`,
+        values
     );
     return rows[0]?.total || 0;
 }
@@ -101,7 +137,7 @@ export async function getUserById(id) {
 /** User profile and transaction stats only (no projects, transactions list, payments, tokens). */
 export async function getUserProfileAndStatsForAdmin(username) {
     const [userRows] = await pool.query(
-        'SELECT username, name, email, country_code, mobile, password, status, kyc_verified, firm_name, business_name, business_type, create_date, modify_date FROM users WHERE username = ? LIMIT 1',
+        'SELECT username, name, email, country_code, mobile, status, kyc_verified, firm_name, business_name, business_type, create_date, modify_date FROM users WHERE username = ? LIMIT 1',
         [username]
     );
     const user = userRows[0];
@@ -127,7 +163,7 @@ export async function getUserProfileAndStatsForAdmin(username) {
 
 export async function getUserDetailsForAdmin(username) {
     const [userRows] = await pool.query(
-        'SELECT name, email, country_code, mobile, password, status, kyc_verified, firm_name, business_name, business_type FROM users WHERE username = ? LIMIT 1',
+        'SELECT name, email, country_code, mobile, status, kyc_verified, firm_name, business_name, business_type FROM users WHERE username = ? LIMIT 1',
         [username]
     );
 
@@ -211,7 +247,25 @@ export async function updateUserStatus(id, status) {
 }
 
 // List projects for admin panel
-export async function getProjects() {
+export async function getProjects(limit = 50, offset = 0, filters = {}) {
+    const where = [];
+    const values = [];
+    const search = String(filters.search || '').trim();
+
+    if (search) {
+        const like = `%${search}%`;
+        where.push('(project_id LIKE ? OR project_name LIKE ? OR business_id LIKE ?)');
+        values.push(like, like, like);
+    }
+    if (filters.status !== undefined) {
+        where.push('status = ?');
+        values.push(filters.status);
+    }
+    if (filters.is_waba_connected !== undefined) {
+        where.push('is_waba_connected = ?');
+        values.push(filters.is_waba_connected);
+    }
+
     const [rows] = await pool.query(
         `SELECT 
             id,
@@ -224,9 +278,38 @@ export async function getProjects() {
             utility_charge,
             authentication_charge
         FROM aisensy_projects
-        ORDER BY id DESC`
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?`,
+        [...values, Number(limit), Number(offset)]
     );
     return rows;
+}
+
+export async function getProjectsCount(filters = {}) {
+    const where = [];
+    const values = [];
+    const search = String(filters.search || '').trim();
+
+    if (search) {
+        const like = `%${search}%`;
+        where.push('(project_id LIKE ? OR project_name LIKE ? OR business_id LIKE ?)');
+        values.push(like, like, like);
+    }
+    if (filters.status !== undefined) {
+        where.push('status = ?');
+        values.push(filters.status);
+    }
+    if (filters.is_waba_connected !== undefined) {
+        where.push('is_waba_connected = ?');
+        values.push(filters.is_waba_connected);
+    }
+
+    const [rows] = await pool.query(
+        `SELECT COUNT(*) AS total FROM aisensy_projects ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`,
+        values
+    );
+    return Number(rows[0]?.total || 0);
 }
 
 export async function getProjectById(projectId) {

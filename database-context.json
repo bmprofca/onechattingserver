@@ -48,15 +48,6 @@
           "comment": null
         },
         {
-          "name": "password",
-          "type": "varchar(1000)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": null
-        },
-        {
           "name": "username",
           "type": "varchar(100)",
           "nullable": false,
