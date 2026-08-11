@@ -15,11 +15,13 @@ import {
     getDashboardSummary,
     updateProjectCharges
 } from '../helpers/adminDb.js';
-import { GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP } from '../helpers/function.js';
+import { GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, FUTURE_TIMESTAMP } from '../helpers/function.js';
 import subscriptionDb from '../helpers/subscriptionDb.js';
 import { Decrypt } from '../helpers/Decrypt.js';
 import pool from '../db.js';
 import axios from 'axios';
+import { sendOtpSms } from "../helpers/sms.js";
+import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
 import { GetAiSensyProjectToken } from '../helpers/function.js';
 import {
     AISENSY_API_KEY,
@@ -58,6 +60,112 @@ const authAdmin = async (req, res, next) => {
         return res.status(500).json({ error: 'Server error.' });
     }
 };
+
+router.post('/send-otp', async (req, res) => {
+    try {
+        const { mobile } = req.body;
+        if (!mobile) return res.status(400).json({ error: 'Mobile number is required' });
+
+        const [rows] = await pool.query(
+            "SELECT id, username, email, role, name, country_code, mobile FROM users WHERE mobile = ? AND role = 'admin' LIMIT 1",
+            [mobile]
+        );
+
+        console.log(rows);
+        
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ error: 'Admin account not found for this mobile number.' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expire_date = FUTURE_TIMESTAMP(10); // 10 minutes expiry
+        console.log(otp);
+
+        const conn = await pool.getConnection();
+        try {
+            await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')", [mobile, otp, expire_date]);
+            await conn.commit();
+            
+            try {
+                await sendOtpWhatsApp(mobile, otp);
+                await sendOtpSms(mobile, otp);
+            } catch (error) {
+                console.error("Failed to send OTP:", error);
+            }
+            
+            res.status(200).json({ error: false, message: 'OTP sent successfully' });
+        } catch (error) {
+            await conn.rollback();
+            console.error("OTP send error:", error);
+            return res.status(500).json({ error: 'Failed to send OTP' });
+        } finally {
+            if (conn) conn.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error.' });
+    }
+});
+
+router.post('/verify-otp', async (req, res) => {
+    try {
+        const { mobile, otp } = req.body;
+        if (!mobile || !otp) return res.status(400).json({ error: 'Mobile number and OTP are required' });
+
+        const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
+
+        if (otp_row.length === 0) {
+            return res.status(401).json({ error: 'Invalid or expired OTP' });
+        }
+
+        const [rows] = await pool.query(
+            "SELECT id, username, email, role, name, country_code, mobile FROM users WHERE mobile = ? AND role = 'admin' LIMIT 1",
+            [mobile]
+        );
+        
+        let user = rows[0] || null;
+
+        if (!user || user.role !== 'admin') {
+            return res.status(401).json({ error: 'Admin account not found.' });
+        }
+
+        // Mark OTP as verified
+        await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
+
+        const { RANDOM_STRING, TIMESTAMP, FUTURE_TIMESTAMP } = await import(
+            '../helpers/function.js'
+        );
+        const token = RANDOM_STRING(50);
+        await pool.query(
+            'INSERT INTO `login_token`(`username`, `create_date`, `create_by`, `modify_date`, `modify_by`, `token`, `expire_date`, `status`) VALUES (?,?,?,?,?,?,?,?)',
+            [
+                user.username,
+                TIMESTAMP(),
+                user.username,
+                TIMESTAMP(),
+                user.username,
+                token,
+                FUTURE_TIMESTAMP(43200),
+                '1'
+            ]
+        );
+
+        res.status(200).json({
+            error: false,
+            username: user.username,
+            token: token,
+            profile: {
+                name: user.name,
+                country_code: user.country_code,
+                mobile: user.mobile,
+                email: user.email
+            }
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error.' });
+    }
+});
 
 router.post('/login', async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
