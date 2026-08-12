@@ -7,8 +7,37 @@ function webhookUrlFor(project_id) {
     return `${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}`;
 }
 
+let webhookColumnReady = false;
+
 /**
- * Always PATCH AiSensy webhook for a project and persist URL in DB.
+ * Ensure aisensy_projects.webhook_subscribed exists (0/1 flag).
+ */
+async function ensureWebhookSubscribedColumn() {
+    if (webhookColumnReady) return;
+
+    try {
+        await pool.query(
+            `ALTER TABLE aisensy_projects
+             ADD COLUMN webhook_subscribed ENUM('0','1') NOT NULL DEFAULT '0'
+             COMMENT '1 = AiSensy webhook subscription succeeded'`
+        );
+        console.log("[webhook] Added column aisensy_projects.webhook_subscribed");
+    } catch (error) {
+        // ER_DUP_FIELDNAME = 1060 — column already exists
+        if (error?.errno !== 1060 && error?.code !== "ER_DUP_FIELDNAME") {
+            console.error("[webhook] Failed to ensure webhook_subscribed column:", error?.message || error);
+            throw error;
+        }
+    }
+
+    webhookColumnReady = true;
+}
+
+/**
+ * Always PATCH AiSensy webhook for a project (even if DB already has a URL).
+ * On success: save webhook_url + webhook_subscribed='1'
+ * On failure: webhook_subscribed='0'
+ *
  * @param {string} project_id
  * @param {{ retries?: number, projectToken?: string }} [options]
  * @returns {{ ok: boolean, webhookUrl?: string, error?: string }}
@@ -19,10 +48,20 @@ export async function ensureProjectWebhook(project_id, options = {}) {
         return { ok: false, error: "Missing project_id" };
     }
 
+    await ensureWebhookSubscribedColumn();
+
     const project_token =
         options.projectToken || (await GetAiSensyProjectToken(project_id));
 
     if (!project_token) {
+        try {
+            await pool.query(
+                "UPDATE `aisensy_projects` SET `webhook_subscribed`='0' WHERE project_id = ?",
+                [project_id]
+            );
+        } catch {
+            // ignore
+        }
         return { ok: false, error: "Failed to get project token" };
     }
 
@@ -43,7 +82,7 @@ export async function ensureProjectWebhook(project_id, options = {}) {
             });
 
             await pool.query(
-                "UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?",
+                "UPDATE `aisensy_projects` SET `webhook_url`=?, `webhook_subscribed`='1' WHERE project_id = ?",
                 [webhookUrl, project_id]
             );
 
@@ -62,11 +101,10 @@ export async function ensureProjectWebhook(project_id, options = {}) {
         }
     }
 
-    // Leave empty so backfill cron can retry later
     try {
         await pool.query(
-            "UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?",
-            ["", project_id]
+            "UPDATE `aisensy_projects` SET `webhook_subscribed`='0' WHERE project_id = ?",
+            [project_id]
         );
     } catch {
         // ignore
@@ -82,52 +120,41 @@ export async function ensureProjectWebhook(project_id, options = {}) {
 }
 
 /**
- * Backfill projects with missing webhook_url (and WABA connected when possible).
+ * Subscribe AiSensy webhook for every active project
+ * (even if webhook_url / webhook_subscribed is already set).
  */
+export async function ensureAllProjectWebhooks() {
+    await ensureWebhookSubscribedColumn();
+
+    const [rows] = await pool.query(
+        "SELECT project_id FROM aisensy_projects WHERE status = '1'"
+    );
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const row of rows) {
+        const result = await ensureProjectWebhook(row.project_id, { retries: 2 });
+        if (result.ok) ok += 1;
+        else failed += 1;
+    }
+
+    return { ok, failed, checked: rows.length };
+}
+
+/** @deprecated Use ensureAllProjectWebhooks — still re-subscribes all active projects */
 export async function ensureMissingWebhooks() {
-    const [rows] = await pool.query(
-        `SELECT project_id FROM aisensy_projects
-         WHERE (webhook_url = '' OR webhook_url IS NULL)
-           AND (is_waba_connected = '1' OR is_waba_connected = 1 OR is_waba_connected IS NULL)`
-    );
-
-    let ok = 0;
-    let failed = 0;
-
-    for (const row of rows) {
-        const result = await ensureProjectWebhook(row.project_id, { retries: 2 });
-        if (result.ok) ok += 1;
-        else failed += 1;
-    }
-
-    return { ok, failed, checked: rows.length };
+    return ensureAllProjectWebhooks();
 }
 
-/**
- * Re-subscribe webhook for all WABA-connected projects.
- * Fixes cases where DB has webhook_url but AiSensy lost the subscription.
- */
+/** @deprecated Use ensureAllProjectWebhooks */
 export async function ensureAllWabaWebhooks() {
-    const [rows] = await pool.query(
-        `SELECT project_id FROM aisensy_projects
-         WHERE is_waba_connected = '1' OR is_waba_connected = 1`
-    );
-
-    let ok = 0;
-    let failed = 0;
-
-    for (const row of rows) {
-        const result = await ensureProjectWebhook(row.project_id, { retries: 2 });
-        if (result.ok) ok += 1;
-        else failed += 1;
-    }
-
-    return { ok, failed, checked: rows.length };
+    return ensureAllProjectWebhooks();
 }
 
-/** @deprecated Prefer ensureMissingWebhooks / ensureProjectWebhook */
+/** @deprecated Prefer ensureAllProjectWebhooks / ensureProjectWebhook */
 async function SetWebhookSubscription() {
-    return ensureMissingWebhooks();
+    return ensureAllProjectWebhooks();
 }
 
 export default SetWebhookSubscription;

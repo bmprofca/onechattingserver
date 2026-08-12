@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { startCampaignScheduler } from "../helpers/campaign/scheduler.js";
-import { ensureMissingWebhooks, ensureAllWabaWebhooks } from "../helpers/SetWebhookSubscription.js";
+import { ensureAllProjectWebhooks } from "../helpers/SetWebhookSubscription.js";
 import { stopExpiredProjectBilling } from "../helpers/aisensyBilling.js";
 import { generateAiBills } from "../cron/aiBilling.js";
 
@@ -24,18 +24,16 @@ const schedule = (expression, fn, options = {}) => {
 export function startCronJobs() {
     startCampaignScheduler();
 
-    // Backfill missing webhooks (projects where DB URL is empty)
+    // Re-subscribe AiSensy webhook for EVERY active project (even if DB already has URL)
     schedule(WEBHOOK_SUBSCRIPTION_CRON, async () => {
         try {
-            const result = await ensureMissingWebhooks();
-            if (result.checked > 0) {
-                console.log(
-                    `[cron] webhook backfill checked=${result.checked} ok=${result.ok} failed=${result.failed}`
-                );
-            }
+            const result = await ensureAllProjectWebhooks();
+            console.log(
+                `[cron] webhook subscribe checked=${result.checked} ok=${result.ok} failed=${result.failed}`
+            );
         } catch (error) {
             console.error(
-                "[cron] ensureMissingWebhooks error:",
+                "[cron] ensureAllProjectWebhooks error:",
                 error?.message || error
             );
         }
@@ -67,17 +65,17 @@ export function startCronJobs() {
         }
     });
 
-    // On boot: re-subscribe webhooks for all WABA-connected projects (fixes stale AiSensy state)
+    // On boot: subscribe webhooks for all active projects
     setTimeout(() => {
-        ensureAllWabaWebhooks()
+        ensureAllProjectWebhooks()
             .then((result) => {
                 console.log(
-                    `[startup] webhook ensure checked=${result.checked} ok=${result.ok} failed=${result.failed}`
+                    `[startup] webhook subscribe checked=${result.checked} ok=${result.ok} failed=${result.failed}`
                 );
             })
             .catch((error) => {
                 console.error(
-                    "[startup] ensureAllWabaWebhooks error:",
+                    "[startup] ensureAllProjectWebhooks error:",
                     error?.message || error
                 );
             });
