@@ -589,10 +589,28 @@
       "updateTime": null,
       "columns": [
         {
+          "name": "id",
+          "type": "int unsigned",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": "UNI",
+          "default": null,
+          "extra": null,
+          "comment": "Server-generated unique identifier"
+        },
+        {
           "name": "provider",
           "type": "varchar(20)",
           "nullable": false,
-          "key": "PRI",
+          "key": null,
           "default": null,
           "extra": null,
           "comment": "gemini | openai | claude | groq"
@@ -601,7 +619,7 @@
           "name": "model",
           "type": "varchar(100)",
           "nullable": false,
-          "key": "PRI",
+          "key": null,
           "default": null,
           "extra": null,
           "comment": null
@@ -623,13 +641,36 @@
           "default": null,
           "extra": null,
           "comment": "Rs per 1000 output tokens"
+        },
+        {
+          "name": "create_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": "CURRENT_TIMESTAMP",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "update_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": "CURRENT_TIMESTAMP",
+          "extra": "on update CURRENT_TIMESTAMP",
+          "comment": null
         }
       ],
       "indexes": {
         "PRIMARY": {
           "columns": [
-            "provider",
-            "model"
+            "id"
+          ],
+          "nonUnique": false
+        },
+        "UNIQUE": {
+          "columns": [
+            "unique_id"
           ],
           "nonUnique": false
         }
