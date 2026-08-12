@@ -12,19 +12,6 @@ import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "./socketEmit.js";
 import { fetchAndExtractDocumentText } from "./docProcessor.js";
 
-/**
- * ------------------------------------------------------------------------
- * REQUIRED SCHEMA CHANGE for auto_reply_throttle (replaces the old
- * unrelated_count / cooldown_until columns with the diagram's "same
- * irrelevant message repeated -> stop" model):
- *
- *   ALTER TABLE auto_reply_throttle
- *       DROP COLUMN unrelated_count,
- *       DROP COLUMN cooldown_until,
- *       ADD COLUMN last_unclear_message TEXT NULL,
- *       ADD COLUMN stopped TINYINT(1) NOT NULL DEFAULT 0;
- * ------------------------------------------------------------------------
- */
 
 const FALLBACK_NO_CONTEXT = "Sorry, I don't have information about your query. Please connect with our support team for further assistance.";
 const FALLBACK_NO_ANSWER = "Sorry, something went wrong on our end. Please connect with our support team for further assistance.";
@@ -388,7 +375,19 @@ function parseInteractiveResponse(responseText) {
 }
 
 /**
- * Call Gemini and return the raw text.
+ * Normalizes a provider SDK's usage object into { inputTokens, outputTokens }.
+ * Kept as a tiny helper so a missing/undefined usage block from any provider
+ * never blows up billing — it just logs as zero-cost instead of throwing.
+ */
+function toUsage(inputTokens, outputTokens) {
+    return {
+        inputTokens: Number(inputTokens) || 0,
+        outputTokens: Number(outputTokens) || 0,
+    };
+}
+
+/**
+ * Call Gemini and return { text, usage }.
  */
 async function callGemini({ apiKey, model, systemPrompt, context, message }) {
     const client = new GoogleGenerativeAI(apiKey);
@@ -399,12 +398,16 @@ async function callGemini({ apiKey, model, systemPrompt, context, message }) {
     });
     const chat = genModel.startChat({ generationConfig: { temperature: 0.4 } });
     const result = await chat.sendMessage(message);
-    return result.response.text().trim();
+    const usageMeta = result.response.usageMetadata || {};
+    return {
+        text: result.response.text().trim(),
+        usage: toUsage(usageMeta.promptTokenCount, usageMeta.candidatesTokenCount),
+    };
 }
 
 /**
  * Call OpenAI (works with any chat-completions compatible model name,
- * e.g. gpt-4o, gpt-4o-mini, gpt-4.1, o3, etc.)
+ * e.g. gpt-4o, gpt-4o-mini, gpt-4.1, o3, etc.) and return { text, usage }.
  */
 async function callOpenAI({ apiKey, model, systemPrompt, context, message }) {
     const client = new OpenAI({ apiKey });
@@ -417,12 +420,15 @@ async function callOpenAI({ apiKey, model, systemPrompt, context, message }) {
             { role: "user", content: message },
         ],
     });
-    return completion.choices[0].message.content.trim();
+    return {
+        text: completion.choices[0].message.content.trim(),
+        usage: toUsage(completion.usage?.prompt_tokens, completion.usage?.completion_tokens),
+    };
 }
 
 /**
  * Call Anthropic Claude (any model string, e.g. claude-3-5-sonnet-latest,
- * claude-3-5-haiku-latest, claude-opus-4-*, etc.)
+ * claude-3-5-haiku-latest, claude-opus-4-*, etc.) and return { text, usage }.
  */
 async function callClaude({ apiKey, model, systemPrompt, context, message }) {
     const client = new Anthropic({ apiKey });
@@ -434,16 +440,20 @@ async function callClaude({ apiKey, model, systemPrompt, context, message }) {
         system: finalSystemPrompt,
         messages: [{ role: "user", content: message }],
     });
-    return msg.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n")
-        .trim();
+    return {
+        text: msg.content
+            .filter((block) => block.type === "text")
+            .map((block) => block.text)
+            .join("\n")
+            .trim(),
+        usage: toUsage(msg.usage?.input_tokens, msg.usage?.output_tokens),
+    };
 }
 
 /**
  * Call Groq (OpenAI-compatible chat completions API, any hosted model name
  * e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768, etc.)
+ * and return { text, usage }.
  */
 async function callGroq({ apiKey, model, systemPrompt, context, message }) {
     const client = new Groq({ apiKey });
@@ -456,7 +466,10 @@ async function callGroq({ apiKey, model, systemPrompt, context, message }) {
             { role: "user", content: message },
         ],
     });
-    return completion.choices[0].message.content.trim();
+    return {
+        text: completion.choices[0].message.content.trim(),
+        usage: toUsage(completion.usage?.prompt_tokens, completion.usage?.completion_tokens),
+    };
 }
 
 const PROVIDER_HANDLERS = {
@@ -467,6 +480,32 @@ const PROVIDER_HANDLERS = {
 };
 
 /**
+ * Adds two usage objects together, tolerant of missing fields.
+ */
+function addUsage(a, b) {
+    return {
+        inputTokens: (a?.inputTokens || 0) + (b?.inputTokens || 0),
+        outputTokens: (a?.outputTokens || 0) + (b?.outputTokens || 0),
+    };
+}
+
+/**
+ * Persists one AI call's token usage for billing. Never throws — a logging
+ * failure should not take down the customer-facing reply flow.
+ */
+async function logAiUsage(connection, { projectId, messageUniqueId, provider, model, callType, usage }) {
+    if (!usage || (!usage.inputTokens && !usage.outputTokens)) return;
+    try {
+        await connection.query(
+            "INSERT INTO ai_usage_log (project_id, message_unique_id, provider, model, call_type, input_tokens, output_tokens, create_date) VALUES (?,?,?,?,?,?,?,?)",
+            [projectId, messageUniqueId || null, provider, model, callType, usage.inputTokens, usage.outputTokens, TIMESTAMP()]
+        );
+    } catch (error) {
+        console.error("[AutoReply] Failed to log AI usage:", error?.message || error);
+    }
+}
+
+/**
  * Generate a reply for a real customer message. The AI fully decides the
  * reply text (answer or fallback token) based on the project's context.
  *
@@ -475,37 +514,39 @@ const PROVIDER_HANDLERS = {
  * @param {string|null} apiKey - API key to use (personal or platform)
  * @param {string} provider - 'gemini' | 'openai' | 'claude' | 'groq'
  * @param {string|null} model - Model name to use; falls back to a sane default per provider
- * @returns {Promise<{ replyText: string, isUnclear: boolean }>}
+ * @returns {Promise<{ replyText: string, isUnclear: boolean, isInteractive: boolean, options: string[]|null, usage: {inputTokens:number, outputTokens:number}, provider: string, model: string }>}
  *   isUnclear = true only when the AI itself decided the question is
  *   Unclear/Irrelevant (returned the fallback token) — this is the flag
  *   that feeds the "same message repeated -> stop" tracker. System-level
  *   failures (no key, unknown provider, API error) return isUnclear=false
  *   since they're not a judgement about the customer's message.
  *
- *   NEW: isInteractive=true + options array when the AI returns structured
- *   options (Airtel-style clarifying questions or multi-answer choices).
+ *   `usage` is the SUM of every AI call made while producing this reply
+ *   (document router call, if any, + the main reply call), so the caller
+ *   can log/bill it as a single unit of work for this customer message.
  */
 async function generateAutoReply(context, customerMessage, apiKey, provider, model) {
     if (!apiKey) {
         console.error("[AutoReply] No API key available for auto-reply");
-        return { replyText: FALLBACK_NO_CONTEXT, isUnclear: false, isInteractive: false, options: null };
+        return { replyText: FALLBACK_NO_CONTEXT, isUnclear: false, isInteractive: false, options: null, usage: toUsage(0, 0), provider, model: model || DEFAULT_MODELS[provider] };
     }
 
     const handler = PROVIDER_HANDLERS[provider];
     if (!handler) {
         console.error(`[AutoReply] Unknown provider "${provider}"`);
-        return { replyText: FALLBACK_NO_ANSWER, isUnclear: false, isInteractive: false, options: null };
+        return { replyText: FALLBACK_NO_ANSWER, isUnclear: false, isInteractive: false, options: null, usage: toUsage(0, 0), provider, model: model || DEFAULT_MODELS[provider] };
     }
 
     let systemPrompt = buildSystemPrompt(context);
     const modelToUse = model || DEFAULT_MODELS[provider];
+    let totalUsage = toUsage(0, 0);
 
     // --- Dynamic Document Routing ---
     // If there are documents, check if the customer message requires reading one.
     try {
         const parsed = JSON.parse(context);
         const docs = parsed?.sections?.filter(s => s.type === "docs")?.flatMap(s => s.items) || [];
-        
+
         if (docs.length > 0) {
             const docLabels = docs.map((d, i) => `${i + 1}. ${d.label || d.fileName}`).join("\n");
             const routerPrompt = `You are a document routing agent.
@@ -518,17 +559,19 @@ Does the customer message require reading any of these documents to answer?
 If YES, reply with EXACTLY the number of the document (e.g. "1").
 If NO, reply with "NO". Do not output anything else.`;
 
-            const routerResponse = await handler({
+            const routerResult = await handler({
                 apiKey,
                 model: modelToUse,
                 systemPrompt: "You are a document routing agent. Follow the instructions strictly.",
                 context: null,
                 message: routerPrompt
             });
-            
-            const routerDecision = routerResponse.trim();
+
+            totalUsage = addUsage(totalUsage, routerResult.usage);
+
+            const routerDecision = routerResult.text.trim();
             const docIndex = parseInt(routerDecision) - 1;
-            
+
             if (!isNaN(docIndex) && docs[docIndex]) {
                 const doc = docs[docIndex];
                 console.log(`[AutoReply] AI routed to document: ${doc.label || doc.fileName}`);
@@ -546,7 +589,7 @@ If NO, reply with "NO". Do not output anything else.`;
     try {
         console.log(`[AutoReply] Calling ${provider} (${modelToUse}) for message: "${customerMessage}"`);
 
-        const responseText = await handler({
+        const result = await handler({
             apiKey,
             model: modelToUse,
             systemPrompt,
@@ -554,11 +597,14 @@ If NO, reply with "NO". Do not output anything else.`;
             message: customerMessage,
         });
 
-        console.log(`[AutoReply] Raw AI response: "${responseText}"`);
+        totalUsage = addUsage(totalUsage, result.usage);
+        const responseText = result.text;
+
+        console.log(`[AutoReply] Raw AI response: "${responseText}" (tokens in=${totalUsage.inputTokens} out=${totalUsage.outputTokens})`);
 
         if (isFallbackToken(responseText)) {
             console.log("[AutoReply] AI returned fallback token -> Unclear/Irrelevant, asking for details.");
-            return { replyText: DETAIL_REQUEST_TEXT, isUnclear: true, isInteractive: false, options: null };
+            return { replyText: DETAIL_REQUEST_TEXT, isUnclear: true, isInteractive: false, options: null, usage: totalUsage, provider, model: modelToUse };
         }
 
         // Check for interactive options response
@@ -570,13 +616,17 @@ If NO, reply with "NO". Do not output anything else.`;
                 isUnclear: false,
                 isInteractive: true,
                 options: interactive.options,
+                usage: totalUsage,
+                provider,
+                model: modelToUse,
             };
         }
 
-        return { replyText: responseText, isUnclear: false, isInteractive: false, options: null };
+        return { replyText: responseText, isUnclear: false, isInteractive: false, options: null, usage: totalUsage, provider, model: modelToUse };
     } catch (error) {
         console.error(`[AutoReply] Error generating AI reply via ${provider} (${modelToUse}):`, error?.message || error);
-        return { replyText: FALLBACK_NO_ANSWER, isUnclear: false, isInteractive: false, options: null };
+        // Router call (if any) still cost tokens even though the main call failed — keep totalUsage as-is.
+        return { replyText: FALLBACK_NO_ANSWER, isUnclear: false, isInteractive: false, options: null, usage: totalUsage, provider, model: modelToUse };
     }
 }
 
@@ -597,20 +647,28 @@ function getContextHash(context) {
  * message. Returns null (and logs) on any failure — the caller should
  * treat that as "skip the guide this time", never as a reason to fail
  * the whole auto-reply.
+ *
+ * @returns {Promise<{ text: string, usage: {inputTokens:number, outputTokens:number}, provider: string, model: string }|null>}
  */
 async function generateContextGuide(apiKey, provider, model, context) {
     const handler = PROVIDER_HANDLERS[provider];
     if (!handler) return null;
 
+    const modelToUse = model || DEFAULT_MODELS[provider];
+
     try {
-        const guideText = await handler({
+        const result = await handler({
             apiKey,
-            model: model || DEFAULT_MODELS[provider],
+            model: modelToUse,
             systemPrompt: buildGuideSystemPrompt(context),
             context,
             message: "Write the welcome/help guide message now.",
         });
-        return guideText?.trim() || null;
+
+        const guideText = result.text?.trim() || null;
+        if (!guideText) return null;
+
+        return { text: guideText, usage: result.usage, provider, model: modelToUse };
     } catch (error) {
         console.error("[AutoReply] Error generating context guide:", error?.message || error);
         return null;
@@ -622,6 +680,9 @@ async function generateContextGuide(apiKey, provider, model, context) {
  * it only on a cache miss or when the context has changed since it was last
  * generated. `ensureProviderConfig` is only invoked on a cache miss, so a
  * cache hit never needs an API key resolved or an AI call made.
+ *
+ * On a cache miss, the AI call's token usage is logged to ai_usage_log
+ * (call_type = 'guide') so it's included in billing like any other call.
  *
  * @param {() => Promise<{apiKey: string, provider: string, model: string|null} | null>} ensureProviderConfig
  * @returns {Promise<string|null>}
@@ -646,16 +707,25 @@ async function getOrGenerateContextGuide(connection, projectUniqueId, context, e
         return null;
     }
 
-    const guideText = await generateContextGuide(providerConfig.apiKey, providerConfig.provider, providerConfig.model, context);
-    if (!guideText) return null;
+    const guideResult = await generateContextGuide(providerConfig.apiKey, providerConfig.provider, providerConfig.model, context);
+    if (!guideResult) return null;
+
+    await logAiUsage(connection, {
+        projectId: projectUniqueId,
+        messageUniqueId: null,
+        provider: guideResult.provider,
+        model: guideResult.model,
+        callType: "guide",
+        usage: guideResult.usage,
+    });
 
     await connection.query(
         "INSERT INTO project_context_guides (project_unique_id, guide_text, context_hash) VALUES (?, ?, ?) " +
         "ON DUPLICATE KEY UPDATE guide_text = VALUES(guide_text), context_hash = VALUES(context_hash)",
-        [projectUniqueId, guideText, currentHash]
+        [projectUniqueId, guideResult.text, currentHash]
     );
 
-    return guideText;
+    return guideResult.text;
 }
 
 /**
@@ -977,7 +1047,9 @@ async function getSendContext(connection, project_id, sender) {
  *  5. Bad Words? -> No Reply, stop here (nothing sent, nothing tracked).
  *  6. Classify locally via regex:
  *       - small talk (greeting/thanks/bye/ack) -> Managed Reply, skip AI.
- *       - otherwise -> send to the resolved AI provider.
+ *       - otherwise -> send to the resolved AI provider, and log the
+ *         token usage of that call (+ any document-router sub-call) to
+ *         ai_usage_log for billing.
  *  7. If the AI answered from context -> genuine reply, reset the
  *     "unclear message" tracker for this sender.
  *     If the AI returned the fallback token (Unclear/Irrelevant) -> send
@@ -985,7 +1057,12 @@ async function getSendContext(connection, project_id, sender) {
  *     unclear message as last time; if so, stop auto-reply for this
  *     conversation and send the "connect with our agent" notice instead.
  *  8. If this was the sender's first message ever, also send the (optional,
- *     non-diagram) AI-generated "here's what you can ask me" guide message.
+ *     non-diagram) AI-generated "here's what you can ask me" guide message
+ *     (its token usage is logged separately, call_type = 'guide').
+ *
+ * Billing itself (turning ai_usage_log rows into a daily Rs charge with
+ * platform markup) happens out-of-band in the aiBilling.js cron job — this
+ * function only ever records raw token usage, never computes money.
  *
  * @param {string} project_id - The project ID
  * @param {string} sender - The customer's WhatsApp number
@@ -1094,6 +1171,18 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
             isUnclear = result.isUnclear;
             isInteractive = result.isInteractive;
             interactiveOptions = result.options;
+
+            // Log token usage for this customer message's AI call(s) — used by
+            // the daily billing job (aiBilling.js) to charge per-token + 10%
+            // platform markup instead of a flat per-message rate.
+            await logAiUsage(connection, {
+                projectId: projectUniqueId,
+                messageUniqueId: incomingUniqueId,
+                provider: result.provider,
+                model: result.model,
+                callType: "reply",
+                usage: result.usage,
+            });
         }
 
         console.log(`[AutoReply] Final reply for project ${project_id}: "${replyText}"${isInteractive ? ` (interactive, ${interactiveOptions?.length} options)` : ""}`);

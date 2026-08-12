@@ -475,6 +475,167 @@
       }
     },
     {
+      "table": "ai_usage_log",
+      "tableRows": 0,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-08-12T00:00:00.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": "References aisensy_projects.unique_id"
+        },
+        {
+          "name": "message_unique_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "References messages.unique_id — the customer message this AI call was answering, if any"
+        },
+        {
+          "name": "provider",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "gemini | openai | claude | groq"
+        },
+        {
+          "name": "model",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "Model string actually used for this call"
+        },
+        {
+          "name": "call_type",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": "reply",
+          "extra": null,
+          "comment": "reply | router | guide"
+        },
+        {
+          "name": "input_tokens",
+          "type": "int(11)",
+          "nullable": false,
+          "key": null,
+          "default": "0",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "output_tokens",
+          "type": "int(11)",
+          "nullable": false,
+          "key": null,
+          "default": "0",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        },
+        "idx_project_date": {
+          "columns": [
+            "project_id",
+            "create_date"
+          ],
+          "nonUnique": true
+        }
+      }
+    },
+    {
+      "table": "ai_model_pricing",
+      "tableRows": 0,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-08-12T00:00:00.000Z",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "provider",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": null,
+          "comment": "gemini | openai | claude | groq"
+        },
+        {
+          "name": "model",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "input_price_per_1k",
+          "type": "decimal(10,4)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "Rs per 1000 input tokens"
+        },
+        {
+          "name": "output_price_per_1k",
+          "type": "decimal(10,4)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": "Rs per 1000 output tokens"
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "provider",
+            "model"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
       "table": "aisensy_token",
       "tableRows": 43,
       "engine": "InnoDB",

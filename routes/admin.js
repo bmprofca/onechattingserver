@@ -1,4 +1,3 @@
-
 import express from 'express';
 import {
     getAdminByToken,
@@ -84,7 +83,7 @@ router.post('/send-otp', async (req, res) => {
         );
 
         console.log(rows);
-        
+
         if (!rows || rows.length === 0) {
             return res.status(404).json({ error: 'Admin account not found for this mobile number.' });
         }
@@ -97,14 +96,14 @@ router.post('/send-otp', async (req, res) => {
         try {
             await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')", [mobile, otp, expire_date]);
             await conn.commit();
-            
+
             try {
                 await sendOtpWhatsApp(mobile, otp);
                 await sendOtpSms(mobile, otp);
             } catch (error) {
                 console.error("Failed to send OTP:", error);
             }
-            
+
             res.status(200).json({ error: false, message: 'OTP sent successfully' });
         } catch (error) {
             await conn.rollback();
@@ -134,7 +133,7 @@ router.post('/verify-otp', async (req, res) => {
             "SELECT id, username, email, role, name, country_code, mobile FROM users WHERE mobile = ? AND role = 'admin' LIMIT 1",
             [mobile]
         );
-        
+
         let user = rows[0] || null;
 
         if (!user || user.role !== 'admin') {
@@ -1474,6 +1473,240 @@ router.delete("/ai-providers/:id", async (req, res) => {
         }
 
         return res.status(200).json({ error: false, message: "AI provider deleted successfully" });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+// ==========================================
+// AI Model Pricing CRUD APIs
+// (ai_model_pricing: PRIMARY KEY (provider, model) — used by the
+// token-based billing job to price ai_usage_log rows. See aiBilling.js.)
+// ==========================================
+
+const KNOWN_PROVIDERS = ['gemini', 'openai', 'claude', 'groq'];
+
+/**
+ * Validates the pricing payload shared by POST and PUT.
+ * Returns { valid: true, values } or { valid: false, error }.
+ */
+const parsePricingPayload = (body, { requireAll }) => {
+    const { provider, model, input_price_per_1k, output_price_per_1k } = body || {};
+
+    if (requireAll && (!provider || !model)) {
+        return { valid: false, error: 'provider and model are required.' };
+    }
+
+    if (provider !== undefined && !KNOWN_PROVIDERS.includes(String(provider).toLowerCase())) {
+        return { valid: false, error: `provider must be one of: ${KNOWN_PROVIDERS.join(', ')}.` };
+    }
+
+    const parsePrice = (val, label) => {
+        if (val === undefined) return undefined;
+        const num = Number(val);
+        if (Number.isNaN(num) || num < 0) {
+            throw new Error(`${label} must be a non-negative number.`);
+        }
+        return num;
+    };
+
+    let inputPrice;
+    let outputPrice;
+    try {
+        inputPrice = parsePrice(input_price_per_1k, 'input_price_per_1k');
+        outputPrice = parsePrice(output_price_per_1k, 'output_price_per_1k');
+    } catch (e) {
+        return { valid: false, error: e.message };
+    }
+
+    if (requireAll && (inputPrice === undefined || outputPrice === undefined)) {
+        return { valid: false, error: 'input_price_per_1k and output_price_per_1k are required.' };
+    }
+
+    return {
+        valid: true,
+        values: {
+            provider: provider !== undefined ? String(provider).toLowerCase() : undefined,
+            model: model !== undefined ? String(model).trim() : undefined,
+            input_price_per_1k: inputPrice,
+            output_price_per_1k: outputPrice,
+        },
+    };
+};
+
+// List pricing rows, optionally filtered by provider and/or a search term
+// matched against the model name.
+router.get("/ai-model-pricing", async (req, res) => {
+    try {
+        const { page, limit, offset } = getPagination(req.query, 20);
+        const filters = [];
+        const values = [];
+
+        const provider = getOptionalFilter(req.query, 'provider', KNOWN_PROVIDERS);
+        if (provider === null) {
+            return res.status(400).json({ error: `provider must be one of: ${KNOWN_PROVIDERS.join(', ')}.` });
+        }
+        if (provider !== undefined) {
+            filters.push('provider = ?');
+            values.push(provider);
+        }
+
+        const search = String(req.query.search || '').trim();
+        if (search) {
+            filters.push('model LIKE ?');
+            values.push(`%${search}%`);
+        }
+
+        const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+        const [[countRow], [rows]] = await Promise.all([
+            pool.query(`SELECT COUNT(*) AS total FROM ai_model_pricing ${where}`, values),
+            pool.query(
+                `SELECT provider, model, input_price_per_1k, output_price_per_1k
+                 FROM ai_model_pricing ${where}
+                 ORDER BY provider ASC, model ASC
+                 LIMIT ? OFFSET ?`,
+                [...values, limit, offset]
+            )
+        ]);
+
+        const total = Number(countRow?.total || 0);
+        return res.status(200).json({
+            error: false,
+            data: rows,
+            pagination: { page, limit, total, total_pages: Math.ceil(total / limit) || 1 }
+        });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+// Fetch a single pricing row by its composite key.
+router.get("/ai-model-pricing/:provider/:model", async (req, res) => {
+    try {
+        const { provider, model } = req.params;
+
+        const [rows] = await pool.query(
+            "SELECT provider, model, input_price_per_1k, output_price_per_1k FROM ai_model_pricing WHERE provider = ? AND model = ? LIMIT 1",
+            [provider, model]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: "Pricing not found for this provider/model." });
+        }
+
+        return res.status(200).json({ error: false, data: rows[0] });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+// Create a new pricing row. provider + model form the primary key, so this
+// 409s instead of silently overwriting an existing row — use PUT to update.
+router.post("/ai-model-pricing", async (req, res) => {
+    try {
+        const parsed = parsePricingPayload(req.body, { requireAll: true });
+        if (!parsed.valid) {
+            return res.status(400).json({ error: parsed.error });
+        }
+        const { provider, model, input_price_per_1k, output_price_per_1k } = parsed.values;
+
+        const [existing] = await pool.query(
+            "SELECT provider FROM ai_model_pricing WHERE provider = ? AND model = ? LIMIT 1",
+            [provider, model]
+        );
+        if (existing.length > 0) {
+            return res.status(409).json({ error: "Pricing already exists for this provider/model. Use PUT to update it." });
+        }
+
+        await pool.query(
+            "INSERT INTO ai_model_pricing (provider, model, input_price_per_1k, output_price_per_1k) VALUES (?, ?, ?, ?)",
+            [provider, model, input_price_per_1k, output_price_per_1k]
+        );
+
+        return res.status(200).json({
+            error: false,
+            message: "AI model pricing added successfully",
+            data: { provider, model, input_price_per_1k, output_price_per_1k }
+        });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+// Update prices for an existing (provider, model) row. Either price can be
+// omitted to leave it unchanged; the row itself (its key) cannot be renamed
+// here — delete and recreate if the provider/model needs to change.
+router.put("/ai-model-pricing/:provider/:model", async (req, res) => {
+    try {
+        const { provider, model } = req.params;
+
+        const parsed = parsePricingPayload(req.body, { requireAll: false });
+        if (!parsed.valid) {
+            return res.status(400).json({ error: parsed.error });
+        }
+        const { input_price_per_1k, output_price_per_1k } = parsed.values;
+
+        if (input_price_per_1k === undefined && output_price_per_1k === undefined) {
+            return res.status(400).json({ error: 'Provide at least one of input_price_per_1k or output_price_per_1k to update.' });
+        }
+
+        const [existing] = await pool.query(
+            "SELECT provider FROM ai_model_pricing WHERE provider = ? AND model = ? LIMIT 1",
+            [provider, model]
+        );
+        if (existing.length === 0) {
+            return res.status(404).json({ error: "Pricing not found for this provider/model." });
+        }
+
+        const setClauses = [];
+        const setValues = [];
+        if (input_price_per_1k !== undefined) {
+            setClauses.push('input_price_per_1k = ?');
+            setValues.push(input_price_per_1k);
+        }
+        if (output_price_per_1k !== undefined) {
+            setClauses.push('output_price_per_1k = ?');
+            setValues.push(output_price_per_1k);
+        }
+
+        await pool.query(
+            `UPDATE ai_model_pricing SET ${setClauses.join(', ')} WHERE provider = ? AND model = ?`,
+            [...setValues, provider, model]
+        );
+
+        const [updated] = await pool.query(
+            "SELECT provider, model, input_price_per_1k, output_price_per_1k FROM ai_model_pricing WHERE provider = ? AND model = ? LIMIT 1",
+            [provider, model]
+        );
+
+        return res.status(200).json({
+            error: false,
+            message: "AI model pricing updated successfully",
+            data: updated[0]
+        });
+    } catch (error) {
+        return res.status(500).json({ error: "Server error.", e: error?.message });
+    }
+});
+
+// Delete a pricing row. Any usage logged against this provider/model after
+// deletion will be skipped (and warned about) by the billing job until a
+// new pricing row is added — see aiBilling.js.
+router.delete("/ai-model-pricing/:provider/:model", async (req, res) => {
+    try {
+        const { provider, model } = req.params;
+
+        const [result] = await pool.query(
+            "DELETE FROM ai_model_pricing WHERE provider = ? AND model = ?",
+            [provider, model]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "Pricing not found for this provider/model." });
+        }
+
+        return res.status(200).json({ error: false, message: "AI model pricing deleted successfully" });
     } catch (error) {
         return res.status(500).json({ error: "Server error.", e: error?.message });
     }
