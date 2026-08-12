@@ -28,7 +28,6 @@ import planRouter from "./routes/plan.js";
 import developerRouter from "./developerRoutes/index.js";
 import developerSettingsRouter from "./routes/developer.js";
 import { generateSummary } from "./generate-db-summary.js";
-import SetWebhookSubscription from "./helpers/SetWebhookSubscription.js";
 import subscriptionRouter from "./routes/subscription.js";
 
 const app = express();

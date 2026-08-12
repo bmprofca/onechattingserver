@@ -6,6 +6,8 @@ import { Decrypt } from "../helpers/Decrypt.js";
 import { auth } from "../middleware/auth.js";
 import axios from "axios";
 import { AISENSY_API_KEY, AISENSY_PARTNER_ID, BASE_DOMAIN, TEMPLATE_CHARGES } from "../helpers/Config.js";
+import { activateProjectServices } from "../helpers/aisensyBilling.js";
+import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 
 router.post("/embed-signup", auth, async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
@@ -509,32 +511,11 @@ router.post("/meta-details", auth, async (req, res) => {
                 address: wa_business_profile?.address,
                 wa_number
             };
+        }
 
-            // Best-effort webhook update (don't fail meta-details if it fails)
-            const webhookOptions = {
-                method: 'PATCH',
-                url: 'https://backend.aisensy.com/direct-apis/t1/settings/update-webhook',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${project_token}`
-                },
-                data: { webhooks: { url: `${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}` } }
-            };
-
-            try {
-                await axios.request(webhookOptions);
-                await pool.query(
-                    "UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?",
-                    [`${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}`, project_id]
-                );
-            } catch (error) {
-                console.error("[meta-details] Webhook subscription error", { project_id, message: error?.message, response: error?.response?.data });
-                await pool.query(
-                    "UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?",
-                    ["", project_id]
-                );
-            }
+        // Always re-ensure webhook when WABA is connected (fixes stale AiSensy subscriptions)
+        if (res_data.is_waba_connected) {
+            await ensureProjectWebhook(project_id, { retries: 2, projectToken: project_token });
         }
 
         return res.status(200).json({ error: false, data: res_data });
@@ -802,12 +783,17 @@ router.post("/create-project", auth, async (req, res) => {
         // If everything is successful, commit the transaction
         await connection.commit();
 
+        // Realtime AiSensy billing + webhook after DB commit
+        const services = await activateProjectServices(project_id);
+
         return res.status(200).json({
             error: false,
             msg: 'Project created successfully',
             data: {
                 name: project_name,
                 project_id,
+                billing_ok: !!services?.billing?.ok,
+                webhook_ok: !!services?.webhook?.ok,
             }
         });
 

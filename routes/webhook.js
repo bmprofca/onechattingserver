@@ -7,6 +7,7 @@ import { emitToProjectSockets } from "../helpers/socketEmit.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { processWalletTopupWebhook } from "../helpers/paymentGateway.js";
 import axios from "axios";
+import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -1025,25 +1026,7 @@ router.post("/partner-webhook", async (req, res) => {
         if (is_whatsapp_verified == true) {
             const wa_number = project_data?.wa_number;
 
-
-            const project_token = await GetAiSensyProjectToken(project_id);
-
-            const options = {
-                method: 'PATCH',
-                url: 'https://backend.aisensy.com/direct-apis/t1/settings/update-webhook',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${project_token}`
-                },
-                data: { webhooks: { url: `${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}` } }
-            };
-            try {
-                await axios.request(options);
-                await pool.query("UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?", [`${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}`, project_id]);
-            } catch (error) {
-                console.error("[partner-webhook] Webhook subscription error", { project_id, message: error?.message, response: error?.response?.data });
-            }
+            await ensureProjectWebhook(project_id, { retries: 2 });
 
             await pool.query("UPDATE `aisensy_projects` SET `is_waba_connected`=?, `wa_number`=? WHERE project_id = ?", ['1', wa_number, project_id]);
         }
