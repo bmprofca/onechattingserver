@@ -1,6 +1,5 @@
 import cron from "node-cron";
 import { startCampaignScheduler } from "../helpers/campaign/scheduler.js";
-import { ensureAllProjectWebhooks } from "../helpers/SetWebhookSubscription.js";
 import { stopExpiredProjectBilling } from "../helpers/aisensyBilling.js";
 import { generateAiBills } from "../cron/aiBilling.js";
 
@@ -11,9 +10,6 @@ const BILLING_EXPIRY_CRON_ENABLED = process.env.BILLING_CRON_ENABLED !== "false"
 const BILLING_EXPIRY_CRON_SCHEDULE =
     process.env.BILLING_CRON_SCHEDULE || "5 0 * * *"; // 00:05 IST daily
 
-const WEBHOOK_SUBSCRIPTION_CRON =
-    process.env.WEBHOOK_SUBSCRIPTION_CRON || "*/30 * * * *";
-
 const schedule = (expression, fn, options = {}) => {
     return cron.schedule(expression, fn, {
         ...options,
@@ -23,21 +19,6 @@ const schedule = (expression, fn, options = {}) => {
 
 export function startCronJobs() {
     startCampaignScheduler();
-
-    // Re-subscribe AiSensy webhook for EVERY active project (even if DB already has URL)
-    schedule(WEBHOOK_SUBSCRIPTION_CRON, async () => {
-        try {
-            const result = await ensureAllProjectWebhooks();
-            console.log(
-                `[cron] webhook subscribe checked=${result.checked} ok=${result.ok} failed=${result.failed}`
-            );
-        } catch (error) {
-            console.error(
-                "[cron] ensureAllProjectWebhooks error:",
-                error?.message || error
-            );
-        }
-    });
 
     // Daily: stop AiSensy billing for expired packages only
     if (BILLING_EXPIRY_CRON_ENABLED) {
@@ -64,20 +45,4 @@ export function startCronJobs() {
             console.error("[cron] generateAiBills error:", error?.message || error);
         }
     });
-
-    // On boot: subscribe webhooks for all active projects
-    setTimeout(() => {
-        ensureAllProjectWebhooks()
-            .then((result) => {
-                console.log(
-                    `[startup] webhook subscribe checked=${result.checked} ok=${result.ok} failed=${result.failed}`
-                );
-            })
-            .catch((error) => {
-                console.error(
-                    "[startup] ensureAllProjectWebhooks error:",
-                    error?.message || error
-                );
-            });
-    }, 5000);
 }

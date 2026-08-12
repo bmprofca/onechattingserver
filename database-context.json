@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-06-22T12:38:44.435Z",
+  "generatedAt": "2026-08-12T20:14:35.929Z",
   "database": "u278432002_onechatting",
-  "tableCount": 27,
+  "tableCount": 33,
   "tables": [
     {
       "table": "aisensy_businesses",
       "tableRows": 12,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-15T01:46:31.000Z",
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-06-28 15:43:32",
       "columns": [
         {
           "name": "id",
@@ -41,6 +41,15 @@
         {
           "name": "business_id",
           "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "password",
+          "type": "varchar(1000)",
           "nullable": false,
           "key": null,
           "default": null,
@@ -104,11 +113,11 @@
     },
     {
       "table": "aisensy_projects",
-      "tableRows": 43,
+      "tableRows": 45,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-06-14T02:57:52.000Z",
-      "updateTime": "2026-06-21T18:04:41.000Z",
+      "createTime": "2026-08-12 20:01:16",
+      "updateTime": "2026-08-12 20:02:58",
       "columns": [
         {
           "name": "id",
@@ -123,7 +132,7 @@
           "name": "unique_id",
           "type": "varchar(100)",
           "nullable": false,
-          "key": null,
+          "key": "MUL",
           "default": null,
           "extra": null,
           "comment": null
@@ -331,9 +340,18 @@
           "type": "enum('0','1')",
           "nullable": true,
           "key": null,
-          "default": "0",
+          "default": "'0'",
           "extra": null,
-          "comment": "0 = use .env GEMINI_API_KEY, 1 = use project_agent_api_keys"
+          "comment": null
+        },
+        {
+          "name": "webhook_subscribed",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'0'",
+          "extra": null,
+          "comment": "1 = AiSensy webhook subscription succeeded"
         }
       ],
       "indexes": {
@@ -349,328 +367,15 @@
           ],
           "nonUnique": true
         },
-        "PRIMARY": {
-          "columns": [
-            "id"
-          ],
-          "nonUnique": false
-        }
-      }
-    },
-    {
-      "table": "project_agent_api_keys",
-      "tableRows": 0,
-      "engine": "InnoDB",
-      "comment": null,
-      "createTime": "2026-08-07T00:00:00.000Z",
-      "updateTime": null,
-      "columns": [
-        {
-          "name": "id",
-          "type": "int(11)",
-          "nullable": false,
-          "key": "PRI",
-          "default": null,
-          "extra": "auto_increment",
-          "comment": null
-        },
-        {
-          "name": "unique_id",
-          "type": "varchar(100)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "aisensy_project",
-          "type": "varchar(100)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "References aisensy_projects.unique_id"
-        },
-        {
-          "name": "api_provider",
-          "type": "varchar(50)",
-          "nullable": false,
-          "key": null,
-          "default": "gemini",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "api_key",
-          "type": "text",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "is_active",
-          "type": "enum('0','1')",
-          "nullable": false,
-          "key": null,
-          "default": "1",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "create_date",
-          "type": "timestamp",
-          "nullable": false,
-          "key": null,
-          "default": "current_timestamp()",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "create_by",
-          "type": "varchar(100)",
-          "nullable": true,
-          "key": null,
-          "default": "NULL",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "modify_date",
-          "type": "timestamp",
-          "nullable": false,
-          "key": null,
-          "default": "current_timestamp()",
-          "extra": "on update current_timestamp()",
-          "comment": null
-        },
-        {
-          "name": "modify_by",
-          "type": "varchar(100)",
-          "nullable": true,
-          "key": null,
-          "default": "NULL",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "is_deleted",
-          "type": "enum('0','1')",
-          "nullable": false,
-          "key": null,
-          "default": "0",
-          "extra": null,
-          "comment": null
-        }
-      ],
-      "indexes": {
-        "PRIMARY": {
-          "columns": [
-            "id"
-          ],
-          "nonUnique": false
-        }
-      }
-    },
-    {
-      "table": "ai_usage_log",
-      "tableRows": 0,
-      "engine": "InnoDB",
-      "comment": null,
-      "createTime": "2026-08-12T00:00:00.000Z",
-      "updateTime": null,
-      "columns": [
-        {
-          "name": "id",
-          "type": "int(11)",
-          "nullable": false,
-          "key": "PRI",
-          "default": null,
-          "extra": "auto_increment",
-          "comment": null
-        },
-        {
-          "name": "project_id",
-          "type": "varchar(64)",
-          "nullable": false,
-          "key": "MUL",
-          "default": null,
-          "extra": null,
-          "comment": "References aisensy_projects.unique_id"
-        },
-        {
-          "name": "message_unique_id",
-          "type": "varchar(64)",
-          "nullable": true,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "References messages.unique_id — the customer message this AI call was answering, if any"
-        },
-        {
-          "name": "provider",
-          "type": "varchar(20)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "gemini | openai | claude | groq"
-        },
-        {
-          "name": "model",
-          "type": "varchar(100)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "Model string actually used for this call"
-        },
-        {
-          "name": "call_type",
-          "type": "varchar(20)",
-          "nullable": false,
-          "key": null,
-          "default": "reply",
-          "extra": null,
-          "comment": "reply | router | guide"
-        },
-        {
-          "name": "input_tokens",
-          "type": "int(11)",
-          "nullable": false,
-          "key": null,
-          "default": "0",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "output_tokens",
-          "type": "int(11)",
-          "nullable": false,
-          "key": null,
-          "default": "0",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "create_date",
-          "type": "datetime",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": null
-        }
-      ],
-      "indexes": {
-        "PRIMARY": {
-          "columns": [
-            "id"
-          ],
-          "nonUnique": false
-        },
-        "idx_project_date": {
-          "columns": [
-            "project_id",
-            "create_date"
-          ],
-          "nonUnique": true
-        }
-      }
-    },
-    {
-      "table": "ai_model_pricing",
-      "tableRows": 0,
-      "engine": "InnoDB",
-      "comment": null,
-      "createTime": "2026-08-12T00:00:00.000Z",
-      "updateTime": null,
-      "columns": [
-        {
-          "name": "id",
-          "type": "int unsigned",
-          "nullable": false,
-          "key": "PRI",
-          "default": null,
-          "extra": "auto_increment",
-          "comment": null
-        },
-        {
-          "name": "unique_id",
-          "type": "varchar(50)",
-          "nullable": false,
-          "key": "UNI",
-          "default": null,
-          "extra": null,
-          "comment": "Server-generated unique identifier"
-        },
-        {
-          "name": "provider",
-          "type": "varchar(20)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "gemini | openai | claude | groq"
-        },
-        {
-          "name": "model",
-          "type": "varchar(100)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "input_price_per_1k",
-          "type": "decimal(10,4)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "Rs per 1000 input tokens"
-        },
-        {
-          "name": "output_price_per_1k",
-          "type": "decimal(10,4)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": "Rs per 1000 output tokens"
-        },
-        {
-          "name": "create_date",
-          "type": "datetime",
-          "nullable": false,
-          "key": null,
-          "default": "CURRENT_TIMESTAMP",
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "update_date",
-          "type": "datetime",
-          "nullable": false,
-          "key": null,
-          "default": "CURRENT_TIMESTAMP",
-          "extra": "on update CURRENT_TIMESTAMP",
-          "comment": null
-        }
-      ],
-      "indexes": {
-        "PRIMARY": {
-          "columns": [
-            "id"
-          ],
-          "nonUnique": false
-        },
-        "UNIQUE": {
+        "idx_aisensy_projects_unique_id": {
           "columns": [
             "unique_id"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
           ],
           "nonUnique": false
         }
@@ -678,11 +383,11 @@
     },
     {
       "table": "aisensy_token",
-      "tableRows": 43,
+      "tableRows": 45,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-20T14:18:42.000Z",
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-08-09 04:56:04",
       "columns": [
         {
           "name": "id",
@@ -758,12 +463,306 @@
       }
     },
     {
-      "table": "campaigns",
-      "tableRows": 49,
+      "table": "ai_model_pricing",
+      "tableRows": 1,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-05T05:06:46.000Z",
+      "createTime": "2026-08-12 17:43:43",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(10) unsigned",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": "UNI",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "provider",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "input_price_per_1k",
+          "type": "decimal(10,4)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "output_price_per_1k",
+          "type": "decimal(10,4)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "update_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": "on update current_timestamp()",
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        },
+        "uk_ai_model_pricing_unique_id": {
+          "columns": [
+            "unique_id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "ai_usage_log",
+      "tableRows": 10,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-08-12 05:00:41",
+      "updateTime": "2026-08-12 16:18:04",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "project_id",
+          "type": "varchar(64)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "message_unique_id",
+          "type": "varchar(64)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "provider",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "model",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "call_type",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": "'reply'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "input_tokens",
+          "type": "int(11)",
+          "nullable": false,
+          "key": null,
+          "default": "0",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "output_tokens",
+          "type": "int(11)",
+          "nullable": false,
+          "key": null,
+          "default": "0",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_project_date": {
+          "columns": [
+            "project_id",
+            "create_date"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "auto_reply_throttle",
+      "tableRows": 3,
+      "engine": "InnoDB",
+      "comment": "Tracks repeated unclear messages to stop auto-replies after 2nd occurrence",
+      "createTime": "2026-08-12 04:39:20",
+      "updateTime": "2026-08-12 16:18:04",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "project_unique_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "number",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "last_unclear_message",
+          "type": "longtext",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": "The last unclear/irrelevant message from this customer"
+        },
+        {
+          "name": "stopped",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "key": "MUL",
+          "default": "0",
+          "extra": null,
+          "comment": "1 if auto-reply has been stopped for this conversation due to repeated unclear messages"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": "on update current_timestamp()",
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_project_number": {
+          "columns": [
+            "project_unique_id",
+            "number"
+          ],
+          "nonUnique": true
+        },
+        "idx_stopped": {
+          "columns": [
+            "stopped"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        },
+        "unique_project_number": {
+          "columns": [
+            "project_unique_id",
+            "number"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "campaigns",
+      "tableRows": 62,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-08-08 06:34:17",
       "columns": [
         {
           "name": "id",
@@ -979,11 +978,11 @@
     },
     {
       "table": "campaign_messages",
-      "tableRows": 9630,
+      "tableRows": 12041,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-21T23:33:08.000Z",
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-08-08 13:23:07",
       "columns": [
         {
           "name": "id",
@@ -1152,11 +1151,11 @@
     },
     {
       "table": "cases",
-      "tableRows": 988,
+      "tableRows": 1176,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-22T03:36:08.000Z",
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-08-07 13:47:58",
       "columns": [
         {
           "name": "id",
@@ -1277,11 +1276,11 @@
     },
     {
       "table": "case_messages",
-      "tableRows": 7337,
+      "tableRows": 11169,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-22T06:15:10.000Z",
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-08-08 17:23:55",
       "columns": [
         {
           "name": "id",
@@ -1353,11 +1352,11 @@
     },
     {
       "table": "chat_assigned",
-      "tableRows": 13280,
+      "tableRows": 14013,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-22T05:07:32.000Z",
+      "createTime": "2026-06-28 15:43:32",
+      "updateTime": "2026-08-12 17:44:22",
       "columns": [
         {
           "name": "id",
@@ -1441,11 +1440,11 @@
     },
     {
       "table": "contacts",
-      "tableRows": 13604,
+      "tableRows": 16972,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": "2026-06-17T03:56:35.000Z",
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-08-12 17:44:22",
       "columns": [
         {
           "name": "id",
@@ -1628,8 +1627,8 @@
       "tableRows": 12,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-06-28 15:43:33",
       "columns": [
         {
           "name": "id",
@@ -1760,8 +1759,8 @@
       "tableRows": 147,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-06-28 15:43:33",
       "columns": [
         {
           "name": "id",
@@ -1889,8 +1888,8 @@
       "tableRows": 12,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-06-28 15:43:33",
       "columns": [
         {
           "name": "id",
@@ -1988,8 +1987,8 @@
       "tableRows": 7,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-06-28 15:43:33",
       "columns": [
         {
           "name": "id",
@@ -2108,12 +2107,84 @@
       }
     },
     {
-      "table": "login_token",
-      "tableRows": 75,
+      "table": "global_ai_api_keys",
+      "tableRows": 1,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-22T04:17:56.000Z",
+      "createTime": "2026-08-11 07:00:55",
+      "updateTime": "2026-08-11 16:34:16",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "provider",
+          "type": "enum('gemini','openai','claude','groq')",
+          "nullable": true,
+          "key": null,
+          "default": "'gemini'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "api_key",
+          "type": "text",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_active",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": "on update current_timestamp()",
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "login_token",
+      "tableRows": 235,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-08-12 19:23:49",
       "columns": [
         {
           "name": "id",
@@ -2216,11 +2287,11 @@
     },
     {
       "table": "messages",
-      "tableRows": 104113,
+      "tableRows": 116127,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-22T07:02:01.000Z",
+      "createTime": "2026-06-28 15:43:33",
+      "updateTime": "2026-08-12 20:10:35",
       "columns": [
         {
           "name": "id",
@@ -2542,7 +2613,7 @@
       "tableRows": 0,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
+      "createTime": "2026-06-28 15:43:38",
       "updateTime": null,
       "columns": [
         {
@@ -2664,12 +2735,84 @@
       }
     },
     {
+      "table": "otp_verifications",
+      "tableRows": 34,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-08-10 03:29:25",
+      "updateTime": "2026-08-12 19:21:38",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "mobile",
+          "type": "varchar(20)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "otp",
+          "type": "varchar(10)",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "expire_date",
+          "type": "datetime",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "enum('pending','verified')",
+          "nullable": true,
+          "key": null,
+          "default": "'pending'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "datetime",
+          "nullable": true,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
       "table": "package",
       "tableRows": 2,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:38",
+      "updateTime": "2026-06-28 15:43:38",
       "columns": [
         {
           "name": "id",
@@ -2728,11 +2871,11 @@
     },
     {
       "table": "password_resets",
-      "tableRows": 9,
+      "tableRows": 15,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:38",
+      "updateTime": "2026-08-08 03:25:28",
       "columns": [
         {
           "name": "id",
@@ -2818,11 +2961,11 @@
     },
     {
       "table": "payment_orders",
-      "tableRows": 240,
+      "tableRows": 269,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-15T04:04:46.000Z",
+      "createTime": "2026-06-28 15:43:38",
+      "updateTime": "2026-08-09 09:31:05",
       "columns": [
         {
           "name": "id",
@@ -2971,11 +3114,11 @@
     },
     {
       "table": "permission_list",
-      "tableRows": 24,
+      "tableRows": 25,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:38",
+      "updateTime": "2026-06-28 15:43:38",
       "columns": [
         {
           "name": "id",
@@ -3070,11 +3213,11 @@
     },
     {
       "table": "permission_options",
-      "tableRows": 237,
+      "tableRows": 248,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:47.000Z",
-      "updateTime": null,
+      "createTime": "2026-06-28 15:43:38",
+      "updateTime": "2026-06-28 15:43:39",
       "columns": [
         {
           "name": "id",
@@ -3123,12 +3266,153 @@
       }
     },
     {
-      "table": "project_mapping",
-      "tableRows": 80,
+      "table": "project_agent_api_keys",
+      "tableRows": 6,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-06-09T12:46:39.000Z",
-      "updateTime": "2026-06-21T17:48:59.000Z",
+      "createTime": "2026-08-08 04:04:53",
+      "updateTime": "2026-08-11 16:26:08",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "unique_id",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "UNI",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "aisensy_project",
+          "type": "varchar(100)",
+          "nullable": false,
+          "key": "MUL",
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "api_provider",
+          "type": "varchar(50)",
+          "nullable": false,
+          "key": "MUL",
+          "default": "'gemini'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "api_key",
+          "type": "text",
+          "nullable": false,
+          "key": null,
+          "default": null,
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_active",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": null,
+          "default": "'1'",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "create_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "modify_date",
+          "type": "timestamp",
+          "nullable": false,
+          "key": null,
+          "default": "current_timestamp()",
+          "extra": "on update current_timestamp()",
+          "comment": null
+        },
+        {
+          "name": "modify_by",
+          "type": "varchar(100)",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "is_deleted",
+          "type": "enum('0','1')",
+          "nullable": false,
+          "key": "MUL",
+          "default": "'0'",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "idx_aisensy_project": {
+          "columns": [
+            "aisensy_project"
+          ],
+          "nonUnique": true
+        },
+        "idx_api_provider": {
+          "columns": [
+            "api_provider"
+          ],
+          "nonUnique": true
+        },
+        "idx_is_deleted": {
+          "columns": [
+            "is_deleted"
+          ],
+          "nonUnique": true
+        },
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        },
+        "uniq_project_key": {
+          "columns": [
+            "unique_id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "project_mapping",
+      "tableRows": 81,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-06-28 15:43:39",
+      "updateTime": "2026-08-10 10:09:22",
       "columns": [
         {
           "name": "id",
@@ -3290,11 +3574,11 @@
     },
     {
       "table": "templates",
-      "tableRows": 99,
+      "tableRows": 137,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-06-22T05:04:04.000Z",
-      "updateTime": "2026-06-22T06:19:41.000Z",
+      "createTime": "2026-06-28 15:43:39",
+      "updateTime": "2026-08-12 18:20:47",
       "columns": [
         {
           "name": "id",
@@ -3458,12 +3742,66 @@
       }
     },
     {
-      "table": "transactions",
-      "tableRows": 5563,
+      "table": "test",
+      "tableRows": 0,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-22T06:46:29.000Z",
+      "createTime": "2026-08-12 20:12:49",
+      "updateTime": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "int(11)",
+          "nullable": false,
+          "key": "PRI",
+          "default": null,
+          "extra": "auto_increment",
+          "comment": null
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "value",
+          "type": "longtext",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        },
+        {
+          "name": "remark",
+          "type": "longtext",
+          "nullable": true,
+          "key": null,
+          "default": "NULL",
+          "extra": null,
+          "comment": null
+        }
+      ],
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "id"
+          ],
+          "nonUnique": false
+        }
+      }
+    },
+    {
+      "table": "transactions",
+      "tableRows": 8614,
+      "engine": "InnoDB",
+      "comment": null,
+      "createTime": "2026-06-28 15:43:39",
+      "updateTime": "2026-08-12 19:24:55",
       "columns": [
         {
           "name": "id",
@@ -3612,11 +3950,11 @@
     },
     {
       "table": "users",
-      "tableRows": 38,
+      "tableRows": 42,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-20T12:39:12.000Z",
+      "createTime": "2026-08-10 03:29:25",
+      "updateTime": "2026-08-12 18:16:35",
       "columns": [
         {
           "name": "id",
@@ -3630,15 +3968,6 @@
         {
           "name": "username",
           "type": "varchar(100)",
-          "nullable": false,
-          "key": null,
-          "default": null,
-          "extra": null,
-          "comment": null
-        },
-        {
-          "name": "password",
-          "type": "varchar(1000)",
           "nullable": false,
           "key": null,
           "default": null,
@@ -3792,11 +4121,11 @@
     },
     {
       "table": "user_package",
-      "tableRows": 23,
+      "tableRows": 30,
       "engine": "InnoDB",
       "comment": null,
-      "createTime": "2026-05-16T02:16:50.000Z",
-      "updateTime": "2026-06-20T14:18:42.000Z",
+      "createTime": "2026-06-28 15:43:39",
+      "updateTime": "2026-08-12 19:24:55",
       "columns": [
         {
           "name": "id",

@@ -25,6 +25,27 @@ const __dirname = path.dirname(__filename);
 const WEBHOOK_QUEUE_DIR = path.join(__dirname, "../webhookqueue");
 const __processingProjects = new Set();
 
+/**
+ * Persist every incoming webhook payload into the `test` table for debugging.
+ * type  = route name
+ * value = full JSON body
+ * remark = extra context (project_id, path, etc.)
+ */
+async function saveWebhookToTest(type, body, remark = null) {
+    try {
+        const value =
+            typeof body === "string"
+                ? body
+                : JSON.stringify(body ?? null);
+        await pool.query(
+            "INSERT INTO `test` (`type`, `value`, `remark`) VALUES (?, ?, ?)",
+            [String(type || "webhook"), value, remark != null ? String(remark) : null]
+        );
+    } catch (error) {
+        console.error("[webhook-test] failed to save webhook:", error?.message || error);
+    }
+}
+
 function __sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
@@ -965,6 +986,16 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
 router.post("/aisensy-webhook/:project_id", async (req, res) => {
     const { project_id } = req.params;
 
+    await saveWebhookToTest(
+        "aisensy-webhook",
+        req.body,
+        JSON.stringify({
+            project_id,
+            path: req.originalUrl,
+            method: req.method,
+        })
+    );
+
     // Enqueue to file (serial per project)
     try {
         await __enqueueWebhookToFile(project_id, req.body);
@@ -1003,6 +1034,19 @@ async function DebitBalance(wamid, category) {
 // Razorpay: { event: "payment.captured", payload: { payment: { entity: { ... } } } }
 // Cashfree: { type: "PAYMENT_SUCCESS_WEBHOOK", data: { order: { order_id }, payment: { ... } } }
 router.post("/wallet-topup", async (req, res) => {
+    await saveWebhookToTest(
+        "wallet-topup",
+        req.body,
+        JSON.stringify({
+            path: req.originalUrl,
+            method: req.method,
+            headers: {
+                "x-webhook-signature": req.headers["x-webhook-signature"] || null,
+                "x-razorpay-signature": req.headers["x-razorpay-signature"] || null,
+            },
+        })
+    );
+
     try {
         const result = await processWalletTopupWebhook(req);
         return res.status(result.status).json(result.body);
@@ -1016,6 +1060,15 @@ router.post("/wallet-topup", async (req, res) => {
 router.post("/partner-webhook", async (req, res) => {
     const json = req?.body;
 
+    await saveWebhookToTest(
+        "partner-webhook",
+        json,
+        JSON.stringify({
+            path: req.originalUrl,
+            method: req.method,
+            event: json?.event || null,
+        })
+    );
 
     if (json?.event == "project_waba_updated") {
         const project_data = json?.data?.project;
