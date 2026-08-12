@@ -86,8 +86,8 @@ export function startCronJobs() {
         });
     }
 
-    // Run AI billing every day at 11:11 AM (Asia/Kolkata)
-    schedule("11 11 * * *", async () => {
+    // Run AI billing every day at 12:00 PM (Asia/Kolkata)
+    schedule("0 12 * * *", async () => {
         try {
             await generateAiBills();
         } catch (error) {

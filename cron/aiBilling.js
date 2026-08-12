@@ -36,22 +36,23 @@ function roundToPaise(amount) {
 
 /**
  * Sums input/output tokens per (project_id, provider, model) for the given
- * date, prices each group using ai_model_pricing, and returns a Map of
+ * billing window, prices each group using ai_model_pricing, and returns a Map of
  * project_id -> { rawCost, details: [{provider, model, tokens, cost}] }.
  *
  * Any (provider, model) pair with no pricing row is skipped and logged as a
  * warning rather than silently billed as zero — missing prices should be
  * visible, not invisible.
  */
-async function computeProjectCosts(connection, billDateStr) {
+async function computeProjectCosts(connection, windowStart, windowEnd) {
     const [usageRows] = await connection.query(
         `SELECT project_id, provider, model,
                 SUM(input_tokens)  AS input_tokens,
                 SUM(output_tokens) AS output_tokens
          FROM ai_usage_log
-         WHERE DATE(create_date) = ?
+         WHERE create_date > ?
+           AND create_date <= ?
          GROUP BY project_id, provider, model`,
-        [billDateStr]
+        [windowStart, windowEnd]
     );
 
     if (usageRows.length === 0) {
@@ -94,60 +95,88 @@ async function computeProjectCosts(connection, billDateStr) {
     return projectCosts;
 }
 
+function formatIstDateTime(date) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+    }).formatToParts(date).reduce((result, part) => {
+        if (part.type !== "literal") result[part.type] = part.value;
+        return result;
+    }, {});
+
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function getNoonBillingWindow() {
+    const [date] = formatIstDateTime(new Date()).split(" ");
+    const windowEnd = `${date} 12:00:00`;
+    const previousDay = new Date(`${date}T12:00:00Z`);
+    previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+    const windowStart = previousDay.toISOString().slice(0, 19).replace("T", " ");
+
+    return { windowStart, windowEnd, windowKey: `${windowStart} to ${windowEnd} IST` };
+}
+
 export async function generateAiBills() {
     let connection;
     try {
         connection = await pool.getConnection();
 
-        // Calculate "yesterday" date for billing
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
+        const { windowStart, windowEnd, windowKey } = getNoonBillingWindow();
 
-        const year = yesterday.getFullYear();
-        const month = String(yesterday.getMonth() + 1).padStart(2, "0");
-        const day = String(yesterday.getDate()).padStart(2, "0");
+        console.log(`[aiBilling] Starting AI billing for window: ${windowKey}`);
 
-        const billDateStr = `${year}-${month}-${day}`;
-
-        console.log(`[aiBilling] Starting AI billing for date: ${billDateStr}`);
-
-        const projectCosts = await computeProjectCosts(connection, billDateStr);
+        const projectCosts = await computeProjectCosts(connection, windowStart, windowEnd);
 
         if (projectCosts.size === 0) {
-            console.log(`[aiBilling] No billable AI usage found for ${billDateStr}.`);
+            console.log(`[aiBilling] No billable AI usage found for window: ${windowKey}.`);
             return;
         }
 
-        for (const [project_id, { rawCost, details }] of projectCosts) {
+        for (const [projectUniqueId, { rawCost, details }] of projectCosts) {
             if (rawCost <= 0) continue;
 
-            // Find project owner
+            // ai_usage_log stores aisensy_projects.unique_id, while the
+            // transactions and project_mapping tables use project_id.
+            // Resolve the owner and actual project ID in one query.
             const [ownerRows] = await connection.query(
-                "SELECT username FROM project_mapping WHERE project_id = ? AND type = 'admin' LIMIT 1",
-                [project_id]
+                `SELECT pm.username, ap.project_id
+                 FROM aisensy_projects ap
+                 INNER JOIN project_mapping pm ON pm.project_id = ap.project_id
+                 WHERE ap.unique_id = ?
+                   AND pm.type = 'admin'
+                   AND pm.is_deleted = '0'
+                 LIMIT 1`,
+                [projectUniqueId]
             );
 
             if (ownerRows.length === 0) {
-                console.log(`[aiBilling] No admin owner found for project ${project_id}. Skipping billing.`);
+                console.log(`[aiBilling] No active admin owner found for project ${projectUniqueId}. Skipping billing.`);
                 continue;
             }
 
             const username = ownerRows[0].username;
+            const projectId = ownerRows[0].project_id;
 
-            // Keep one daily ledger charge per project. The transactions
-            // ledger itself is the source of truth and idempotency check.
+            // Keep one ledger charge per project and billing window.
             const [existingBillRows] = await connection.query(
                 `SELECT id FROM transactions
                  WHERE project_id = ?
                    AND transaction_type = 'ai auto reply bill'
                    AND type = '0'
-                   AND DATE(create_date) = ?
+                   AND remark LIKE ?
                  LIMIT 1`,
-                [project_id, billDateStr]
+                [projectId, `AI billing window ${windowKey}%`]
             );
 
             if (existingBillRows.length > 0) {
-                console.log(`[aiBilling] Bill already exists for project ${project_id} on ${billDateStr}. Skipping.`);
+                console.log(`[aiBilling] Bill already exists for project ${projectId}, window: ${windowKey}. Skipping.`);
                 continue;
             }
 
@@ -160,18 +189,18 @@ export async function generateAiBills() {
             const modelsUsed = [...new Set(details.map((d) => `${d.provider}/${d.model}`))].join(", ");
 
             const remark =
-                `Daily AI Agent usage bill for ${billDateStr} ` +
+                `AI billing window ${windowKey} ` +
                 `(${totalTokens} tokens across ${modelsUsed}; ` +
                 `base ₹${rawCost.toFixed(2)} + 10% platform fee ₹${platformFee.toFixed(2)})`;
 
             // The wallet balance is calculated from this debit transaction.
             await connection.query(
                 "INSERT INTO transactions (transaction_id, username, project_id, amount, type, transaction_type, remark, create_date, create_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [RANDOM_STRING(30), username, project_id, billAmount, "0", "ai auto reply bill", remark, TIMESTAMP(), "SYSTEM"]
+                [RANDOM_STRING(30), username, projectId, billAmount, "0", "ai auto reply bill", remark, TIMESTAMP(), "SYSTEM"]
             );
 
             console.log(
-                `[aiBilling] Billed ${username} (Project ${project_id}) for ${totalTokens} tokens ` +
+                `[aiBilling] Billed ${username} (Project ${projectId}) for ${totalTokens} tokens ` +
                 `= ₹${rawCost.toFixed(2)} base + ₹${platformFee.toFixed(2)} fee = ₹${billAmount} total.`
             );
         }
