@@ -499,10 +499,15 @@ async function getDocumentText(doc) {
 
     const cached = documentTextCache.get(url);
     if (cached && Date.now() - cached.createdAt < DOCUMENT_TEXT_CACHE_TTL_MS) {
+        console.log(`[AutoReply] Using cached document text for: ${doc.label || doc.fileName || url} (${cached.text.length} chars)`);
         return cached.text;
     }
 
-    const text = await fetchAndExtractDocumentText(url);
+    // Pass the original fileName so the extractor can use it for extension
+    // detection when the URL path doesn't have a recognizable extension.
+    const fileNameHint = doc.fileName || doc.label || null;
+    const text = await fetchAndExtractDocumentText(url, fileNameHint);
+    console.log(`[AutoReply] Extracted document text for "${doc.label || doc.fileName || url}": ${text.length} chars, preview: "${text.substring(0, 150)}..."`);
     documentTextCache.set(url, { text, createdAt: Date.now() });
     return text;
 }
