@@ -180,9 +180,24 @@ router.post("/update-context", auth, async (req, res) => {
             [context, TIMESTAMP(), username, project_id]
         );
 
+        // A conversation may have been paused after repeatedly asking about
+        // information that was not present in the old context. Once context
+        // changes (for example a new knowledge document is added), allow all
+        // customers to try again with the new information.
+        const [projectRows] = await pool.query(
+            "SELECT unique_id FROM aisensy_projects WHERE project_id = ? LIMIT 1",
+            [project_id]
+        );
+        if (projectRows.length > 0) {
+            await pool.query(
+                "DELETE FROM auto_reply_throttle WHERE project_unique_id = ?",
+                [projectRows[0].unique_id]
+            );
+        }
+
         return res.status(200).json({
             error: false,
-            msg: 'Company context updated successfully'
+            msg: 'Company context updated successfully and paused auto-replies were reset'
         });
     } catch (error) {
         return res.status(200).json({
