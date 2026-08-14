@@ -27,6 +27,7 @@ import {
     AISENSY_PARTNER_ID,
     BASE_DOMAIN
 } from '../helpers/Config.js';
+import { ensureProjectWebhook } from '../helpers/SetWebhookSubscription.js';
 
 const router = express.Router();
 
@@ -877,40 +878,10 @@ router.get('/projects/:project_id/meta-details', async (req, res) => {
                     ['1', project_id]
                 );
 
-                const options = {
-                    method: 'PATCH',
-                    url: 'https://backend.aisensy.com/direct-apis/t1/settings/update-webhook',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Accept: 'application/json',
-                        Authorization: `Bearer ${project_token}`
-                    },
-                    data: {
-                        webhooks: {
-                            url: `${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}`
-                        }
-                    }
-                };
-                try {
-                    await axios.request(options);
-                    await pool.query(
-                        'UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?',
-                        [
-                            `${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}`,
-                            project_id
-                        ]
-                    );
-                } catch (error) {
-                    console.error(
-                        'Webhook subscription error for project id' +
-                        project_id
-                    );
-                    console.error(error?.message || error);
-                    await pool.query(
-                        'UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?',
-                        ['', project_id]
-                    );
-                }
+                await ensureProjectWebhook(project_id, {
+                    retries: 2,
+                    projectToken: project_token
+                });
             } else {
                 await pool.query(
                     'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',

@@ -7,6 +7,7 @@ import { emitToProjectSockets } from "../helpers/socketEmit.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { processWalletTopupWebhook } from "../helpers/paymentGateway.js";
 import axios from "axios";
+import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -23,6 +24,27 @@ const __dirname = path.dirname(__filename);
 
 const WEBHOOK_QUEUE_DIR = path.join(__dirname, "../webhookqueue");
 const __processingProjects = new Set();
+
+/**
+ * Persist every incoming webhook payload into the `test` table for debugging.
+ * type  = route name
+ * value = full JSON body
+ * remark = extra context (project_id, path, etc.)
+ */
+async function saveWebhookToTest(type, body, remark = null) {
+    try {
+        const value =
+            typeof body === "string"
+                ? body
+                : JSON.stringify(body ?? null);
+        await pool.query(
+            "INSERT INTO `test` (`type`, `value`, `remark`) VALUES (?, ?, ?)",
+            [String(type || "webhook"), value, remark != null ? String(remark) : null]
+        );
+    } catch (error) {
+        console.error("[webhook-test] failed to save webhook:", error?.message || error);
+    }
+}
 
 function __sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -964,6 +986,16 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
 router.post("/aisensy-webhook/:project_id", async (req, res) => {
     const { project_id } = req.params;
 
+    await saveWebhookToTest(
+        "aisensy-webhook",
+        req.body,
+        JSON.stringify({
+            project_id,
+            path: req.originalUrl,
+            method: req.method,
+        })
+    );
+
     // Enqueue to file (serial per project)
     try {
         await __enqueueWebhookToFile(project_id, req.body);
@@ -1002,6 +1034,19 @@ async function DebitBalance(wamid, category) {
 // Razorpay: { event: "payment.captured", payload: { payment: { entity: { ... } } } }
 // Cashfree: { type: "PAYMENT_SUCCESS_WEBHOOK", data: { order: { order_id }, payment: { ... } } }
 router.post("/wallet-topup", async (req, res) => {
+    await saveWebhookToTest(
+        "wallet-topup",
+        req.body,
+        JSON.stringify({
+            path: req.originalUrl,
+            method: req.method,
+            headers: {
+                "x-webhook-signature": req.headers["x-webhook-signature"] || null,
+                "x-razorpay-signature": req.headers["x-razorpay-signature"] || null,
+            },
+        })
+    );
+
     try {
         const result = await processWalletTopupWebhook(req);
         return res.status(result.status).json(result.body);
@@ -1015,6 +1060,15 @@ router.post("/wallet-topup", async (req, res) => {
 router.post("/partner-webhook", async (req, res) => {
     const json = req?.body;
 
+    await saveWebhookToTest(
+        "partner-webhook",
+        json,
+        JSON.stringify({
+            path: req.originalUrl,
+            method: req.method,
+            event: json?.event || null,
+        })
+    );
 
     if (json?.event == "project_waba_updated") {
         const project_data = json?.data?.project;
@@ -1025,25 +1079,7 @@ router.post("/partner-webhook", async (req, res) => {
         if (is_whatsapp_verified == true) {
             const wa_number = project_data?.wa_number;
 
-
-            const project_token = await GetAiSensyProjectToken(project_id);
-
-            const options = {
-                method: 'PATCH',
-                url: 'https://backend.aisensy.com/direct-apis/t1/settings/update-webhook',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${project_token}`
-                },
-                data: { webhooks: { url: `${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}` } }
-            };
-            try {
-                await axios.request(options);
-                await pool.query("UPDATE `aisensy_projects` SET `webhook_url`=? WHERE project_id = ?", [`${BASE_DOMAIN}/webhook/aisensy-webhook/${project_id}`, project_id]);
-            } catch (error) {
-                console.error("[partner-webhook] Webhook subscription error", { project_id, message: error?.message, response: error?.response?.data });
-            }
+            await ensureProjectWebhook(project_id, { retries: 2 });
 
             await pool.query("UPDATE `aisensy_projects` SET `is_waba_connected`=?, `wa_number`=? WHERE project_id = ?", ['1', wa_number, project_id]);
         }

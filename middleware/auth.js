@@ -1,5 +1,6 @@
 import pool from "../db.js";
 import { TODAY_DATE } from "../helpers/function.js";
+import { stopProjectBilling } from "../helpers/aisensyBilling.js";
 
 const TOKEN_CACHE_TTL_MS = Number(process.env.AUTH_CACHE_TTL_MS) || 5 * 60 * 1000;
 const PROJECT_MAPPING_CACHE_TTL_MS = Number(process.env.PROJECT_MAPPING_CACHE_TTL_MS) || 2 * 60 * 1000;
@@ -100,6 +101,12 @@ async function CheckProjectValidity(project_id = "") {
 
         const isValid = rows.length > 0;
         setCachedValue(projectValidityCache, project_id, isValid, PROJECT_VALIDITY_CACHE_TTL_MS);
+
+        // Lazy stop AiSensy billing when package is expired (deduped inside helper)
+        if (!isValid && project_id) {
+            stopProjectBilling(project_id).catch(() => {});
+        }
+
         return isValid;
     } catch (err) {
         console.error("CheckProjectValidity error:", err);

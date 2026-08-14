@@ -3,10 +3,7 @@ import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
 import { AISENSY_PROJECT_DATA, GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, TODAY_DATE, USER_DATA } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
-import { BASE_DOMAIN } from "../helpers/Config.js";
-import * as XLSX from "xlsx";
-import fs from "node:fs";
-import path from "node:path";
+import { activateProjectServices } from "../helpers/aisensyBilling.js";
 
 
 const router = express.Router();
@@ -124,6 +121,7 @@ router.post("/purchase", auth, async (req, res) => {
     }
 
     const today = TODAY_DATE();
+    const activatedProjects = [];
 
     for (const element of projects) {
         const project_id = element?.project_id ?? '';
@@ -157,9 +155,21 @@ router.post("/purchase", auth, async (req, res) => {
             "INSERT INTO transactions (transaction_id, username, create_date, create_by, type, transaction_type, amount, value_1, value_2, value_3) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [transaction_id, username, TIMESTAMP(), username, '0', 'project renewal', total_amount, 'subscription', 'project', subscription_id]
         );
+
+        // Realtime AiSensy billing + webhook (do not wait for cron)
+        const services = await activateProjectServices(project_id);
+        activatedProjects.push({
+            project_id,
+            billing_ok: !!services?.billing?.ok,
+            webhook_ok: !!services?.webhook?.ok,
+        });
     }
 
-    return res.status(200).json({ error: false, msg: 'Plan purchased successfully' });
+    return res.status(200).json({
+        error: false,
+        msg: 'Plan purchased successfully',
+        data: { activated_projects: activatedProjects },
+    });
 });
 
 
