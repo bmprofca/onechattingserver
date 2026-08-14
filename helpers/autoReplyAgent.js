@@ -487,6 +487,35 @@ function addUsage(a, b) {
     };
 }
 
+// Avoid downloading and parsing the same context document twice in one
+// message flow (once for routing and again for the final answer).
+const documentTextCache = new Map();
+const DOCUMENT_TEXT_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_ROUTING_PREVIEW_CHARS = 4000;
+
+async function getDocumentText(doc) {
+    const url = doc?.url;
+    if (!url) return "";
+
+    const cached = documentTextCache.get(url);
+    if (cached && Date.now() - cached.createdAt < DOCUMENT_TEXT_CACHE_TTL_MS) {
+        return cached.text;
+    }
+
+    const text = await fetchAndExtractDocumentText(url);
+    documentTextCache.set(url, { text, createdAt: Date.now() });
+    return text;
+}
+
+function makeDocumentPreview(text) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (normalized.length <= MAX_ROUTING_PREVIEW_CHARS) return normalized;
+
+    const headLength = Math.floor(MAX_ROUTING_PREVIEW_CHARS * 0.75);
+    const tailLength = MAX_ROUTING_PREVIEW_CHARS - headLength;
+    return `${normalized.slice(0, headLength)} … [middle omitted] … ${normalized.slice(-tailLength)}`;
+}
+
 /**
  * Persists one AI call's token usage for billing. Never throws — a logging
  * failure should not take down the customer-facing reply flow.
@@ -546,14 +575,24 @@ async function generateAutoReply(context, customerMessage, apiKey, provider, mod
         const docs = parsed?.sections?.filter(s => s.type === "docs")?.flatMap(s => s.items) || [];
 
         if (docs.length > 0) {
-            const docLabels = docs.map((d, i) => `${i + 1}. ${d.label || d.fileName}`).join("\n");
+            // Route by the document's actual contents, not just its label. A
+            // label can be arbitrary (for example "File 2"), while the text
+            // can still clearly answer the customer's question.
+            const documentTexts = await Promise.all(docs.map((doc) => getDocumentText(doc)));
+            const docDescriptions = docs.map((doc, index) => {
+                const label = doc.label || doc.fileName || `Document ${index + 1}`;
+                const preview = makeDocumentPreview(documentTexts[index]);
+                return `${index + 1}. Label: ${label}\nContent preview: ${preview || "(No readable text extracted)"}`;
+            }).join("\n\n");
             const routerPrompt = `You are a document routing agent.
 Customer message: "${customerMessage}"
 
 Available Documents:
-${docLabels}
+${docDescriptions}
 
 Does the customer message require reading any of these documents to answer?
+Choose based primarily on the content previews, not the document labels. The
+customer's wording may be different from the words used in the document.
 If YES, reply with EXACTLY the number of the document (e.g. "1").
 If NO, reply with "NO". Do not output anything else.`;
 
@@ -568,15 +607,17 @@ If NO, reply with "NO". Do not output anything else.`;
             totalUsage = addUsage(totalUsage, routerResult.usage);
 
             const routerDecision = routerResult.text.trim();
-            const docIndex = parseInt(routerDecision) - 1;
+            const routedIndex = parseInt(routerDecision, 10) - 1;
+            const docIndex = !Number.isNaN(routedIndex) && docs[routedIndex] ? routedIndex : -1;
+            if (docIndex < 0) {
+                console.log(`[AutoReply] AI decided no document needed (router output: ${routerDecision})`);
+            }
 
-            if (!isNaN(docIndex) && docs[docIndex]) {
+            if (docIndex >= 0 && docs[docIndex]) {
                 const doc = docs[docIndex];
                 console.log(`[AutoReply] AI routed to document: ${doc.label || doc.fileName}`);
-                const text = await fetchAndExtractDocumentText(doc.url);
-                systemPrompt += `\n\n--- Content of Document: ${doc.label || doc.fileName} ---\n${text}\n--- End of Document ---`;
-            } else {
-                console.log(`[AutoReply] AI decided no document needed (router output: ${routerDecision})`);
+                const text = documentTexts[docIndex];
+                systemPrompt += `\n\n--- Content of Document: ${doc.label || doc.fileName} ---\n${text}\n--- End of Document ---\nUse this document content as the source of truth when it answers the customer's question. If it does not contain the requested detail, return ${FALLBACK_TOKEN}.`;
             }
         }
     } catch (e) {
