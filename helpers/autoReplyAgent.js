@@ -584,6 +584,12 @@ async function generateAutoReply(context, customerMessage, apiKey, provider, mod
                 const preview = makeDocumentPreview(documentTexts[index]);
                 return `${index + 1}. Label: ${label}\nContent preview: ${preview || "(No readable text extracted)"}`;
             }).join("\n\n");
+
+            // Give the answering model the same document evidence as the
+            // router. This means a routing model returning NO cannot hide a
+            // relevant document from the final answer model.
+            systemPrompt += `\n\n--- Document Knowledge Previews ---\n${docDescriptions}\n--- End Document Knowledge Previews ---\nUse these document previews to answer when they contain the requested information. Do not return ${FALLBACK_TOKEN} merely because a document label is unrelated to the customer's wording.`;
+
             const routerPrompt = `You are a document routing agent.
 Customer message: "${customerMessage}"
 
