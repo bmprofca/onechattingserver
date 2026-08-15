@@ -145,8 +145,20 @@ async function validateUserPackageReferences(value) {
 }
 
 const userPackageColumns = `
-    id, subscription_id, username, package_id, project_id, type, amount,
-    start_date, end_date, create_date, create_by, modify_date, modify_by`;
+    up.id, up.subscription_id, up.username, up.package_id, up.project_id, up.type, up.amount,
+    up.start_date, up.end_date, up.create_date, up.create_by, up.modify_date, up.modify_by,
+    u.name AS full_name,
+    u.name AS name,
+    p.profile_picture AS image,
+    p.profile_picture,
+    p.project_name,
+    pkg.name AS package_name`;
+
+const userPackageFrom = `
+    FROM user_package up
+    LEFT JOIN users u ON u.username = up.username
+    LEFT JOIN aisensy_projects p ON p.project_id = up.project_id
+    LEFT JOIN package pkg ON pkg.package_id = up.package_id`;
 
 function getPagination(query, defaultLimit = 20) {
     const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
@@ -302,13 +314,13 @@ router.get("/user-packages", async (req, res) => {
         const search = String(req.query.search || "").trim();
         if (search) {
             const like = `%${search}%`;
-            filters.push("(subscription_id LIKE ? OR username LIKE ? OR package_id LIKE ? OR project_id LIKE ? OR type LIKE ?)");
-            values.push(like, like, like, like, like);
+            filters.push("(up.subscription_id LIKE ? OR up.username LIKE ? OR up.package_id LIKE ? OR up.project_id LIKE ? OR up.type LIKE ? OR u.name LIKE ? OR p.project_name LIKE ? OR pkg.name LIKE ?)");
+            values.push(like, like, like, like, like, like, like, like);
         }
 
         for (const field of ["username", "project_id", "package_id", "type"]) {
             if (req.query[field]) {
-                filters.push(`${field} = ?`);
+                filters.push(`up.${field} = ?`);
                 values.push(String(req.query[field]).trim());
             }
         }
@@ -323,15 +335,15 @@ router.get("/user-packages", async (req, res) => {
                 if (!isValidDate(req.query[queryField])) {
                     return res.status(400).json({ error: `${queryField} must be a valid date in YYYY-MM-DD format.` });
                 }
-                filters.push(`${column} ${operator} ?`);
+                filters.push(`up.${column} ${operator} ?`);
                 values.push(req.query[queryField]);
             }
         }
 
         const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
-        const [[count]] = await pool.query(`SELECT COUNT(*) AS total FROM user_package ${where}`, values);
+        const [[count]] = await pool.query(`SELECT COUNT(*) AS total ${userPackageFrom} ${where}`, values);
         const [subscriptions] = await pool.query(
-            `SELECT ${userPackageColumns} FROM user_package ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+            `SELECT ${userPackageColumns} ${userPackageFrom} ${where} ORDER BY up.id DESC LIMIT ? OFFSET ?`,
             [...values, limit, offset]
         );
 
@@ -358,7 +370,7 @@ router.get("/user-packages/:id", async (req, res) => {
 
     try {
         const [subscriptions] = await pool.query(
-            `SELECT ${userPackageColumns} FROM user_package WHERE id = ? LIMIT 1`,
+            `SELECT ${userPackageColumns} ${userPackageFrom} WHERE up.id = ? LIMIT 1`,
             [id]
         );
         if (!subscriptions.length) return res.status(404).json({ error: "User package not found." });
@@ -397,7 +409,7 @@ router.post("/user-packages", async (req, res) => {
                 TIMESTAMP(), auditUsername, TIMESTAMP(), auditUsername
             ]
         );
-        const [subscriptions] = await pool.query(`SELECT ${userPackageColumns} FROM user_package WHERE id = ? LIMIT 1`, [result.insertId]);
+        const [subscriptions] = await pool.query(`SELECT ${userPackageColumns} ${userPackageFrom} WHERE up.id = ? LIMIT 1`, [result.insertId]);
         return res.status(201).json({ error: false, message: "User package created successfully.", data: subscriptions[0] });
     } catch (error) {
         console.error("[subscription] create user package failed", error);
@@ -415,7 +427,7 @@ router.patch("/user-packages/:id", async (req, res) => {
     if (!Object.keys(value).length) return res.status(400).json({ error: "Provide at least one user package field to update." });
 
     try {
-        const [currentRows] = await pool.query(`SELECT ${userPackageColumns} FROM user_package WHERE id = ? LIMIT 1`, [id]);
+        const [currentRows] = await pool.query(`SELECT ${userPackageColumns} ${userPackageFrom} WHERE up.id = ? LIMIT 1`, [id]);
         if (!currentRows.length) return res.status(404).json({ error: "User package not found." });
 
         const current = currentRows[0];
@@ -433,7 +445,7 @@ router.patch("/user-packages/:id", async (req, res) => {
         const sql = `UPDATE user_package SET ${fields.map((field) => `${field} = ?`).join(", ")}, modify_date = ?, modify_by = ? WHERE id = ?`;
         await pool.query(sql, [...fields.map((field) => value[field]), TIMESTAMP(), req.admin.username, id]);
 
-        const [subscriptions] = await pool.query(`SELECT ${userPackageColumns} FROM user_package WHERE id = ? LIMIT 1`, [id]);
+        const [subscriptions] = await pool.query(`SELECT ${userPackageColumns} ${userPackageFrom} WHERE up.id = ? LIMIT 1`, [id]);
         return res.status(200).json({ error: false, message: "User package updated successfully.", data: subscriptions[0] });
     } catch (error) {
         console.error("[subscription] update user package failed", error);

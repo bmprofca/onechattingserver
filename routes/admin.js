@@ -588,7 +588,7 @@ router.get('/users/:username/projects', async (req, res) => {
             : "pm.username = ? AND pm.type = 'admin'";
         const listParams = search ? [username, like, like, like, limit, offset] : [username, limit, offset];
         const [rows] = await pool.query(
-            `SELECT ap.project_id, ap.project_name, ap.is_waba_connected, ap.create_date,
+            `SELECT ap.project_id, ap.project_name, ap.profile_picture, ap.is_waba_connected, ap.create_date,
                     up.end_date AS expire_date
              FROM project_mapping pm
              JOIN aisensy_projects ap ON ap.project_id = pm.project_id

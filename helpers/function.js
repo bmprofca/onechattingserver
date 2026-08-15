@@ -355,7 +355,7 @@ async function GET_PROJECTS_OF_USER(username) {
 
 
     const [rows] = await pool.query(
-        `SELECT ap.project_id, ap.project_name, ap.is_waba_connected, ap.create_date,
+        `SELECT ap.project_id, ap.project_name, ap.profile_picture, ap.is_waba_connected, ap.create_date,
             up.end_date AS expire_date
      FROM project_mapping pm
      JOIN aisensy_projects ap ON ap.project_id = pm.project_id
