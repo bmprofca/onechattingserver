@@ -267,7 +267,7 @@ router.post("/list", auth, async (req, res) => {
 // PUBLIC ROUTES (no auth — called on QR scan)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// GET /qrcode/validate/:qr_id — Validate QR code and return project info
+// GET /qrcode/validate/:qr_id — Validate QR code and return project metadata for client-side redirect
 router.get("/validate/:qr_id", async (req, res) => {
     try {
         const { qr_id } = req.params;
@@ -291,9 +291,9 @@ router.get("/validate/:qr_id", async (req, res) => {
             return res.status(200).json({ error: "This QR code has been deactivated" });
         }
 
-        // Get project info
+        // Get project info including wa_number
         const [projectRows] = await pool.query(
-            "SELECT project_id, project_name, profile_picture FROM aisensy_projects WHERE project_id = ? AND status = '1'",
+            "SELECT project_id, project_name, profile_picture, wa_number FROM aisensy_projects WHERE project_id = ? AND status = '1'",
             [qrCode.project_id]
         );
 
@@ -303,11 +303,23 @@ router.get("/validate/:qr_id", async (req, res) => {
 
         const project = projectRows[0];
 
+        if (!project.wa_number) {
+            return res.status(200).json({ error: "WhatsApp number is not configured for this project" });
+        }
+
         // Increment scan count (fire and forget)
         pool.query(
             "UPDATE project_qr_codes SET scan_count = scan_count + 1 WHERE qr_id = ?",
             [qr_id]
         ).catch(() => {});
+
+        // Format clean WhatsApp number (keep only digits)
+        const cleanWaNumber = project.wa_number.replace(/\D/g, "");
+
+        // Construct default message containing the project ID
+        const messageText = qrCode.label
+            ? `${qrCode.label} (Project ID: ${project.project_id})`
+            : `Hello! I'd like to connect. (Project ID: ${project.project_id})`;
 
         return res.status(200).json({
             error: false,
@@ -315,7 +327,10 @@ router.get("/validate/:qr_id", async (req, res) => {
                 project_id: project.project_id,
                 project_name: project.project_name,
                 profile_picture: project.profile_picture || "",
+                phone_number: cleanWaNumber,
             },
+            phone_number: cleanWaNumber,
+            custom_message: messageText,
             qr_label: qrCode.label || "",
         });
     } catch (error) {
