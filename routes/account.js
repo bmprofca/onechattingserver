@@ -30,7 +30,7 @@ router.post("/send-otp", async (req, res) => {
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expire_date = FUTURE_TIMESTAMP(10); // 10 minutes expiry
-    // console.log("OTP", otp);
+    console.log("OTP", otp);
 
     const conn = await pool.getConnection();
     try {

@@ -58,15 +58,18 @@ router.get("/admin/all", authAdmin, async (req, res) => {
                 q.create_date,
                 q.modify_date,
                 p.project_name,
-                p.profile_picture
+                p.profile_picture,
+                p.wa_number
             FROM project_qr_codes q
             LEFT JOIN aisensy_projects p ON p.project_id = q.project_id
             ORDER BY q.create_date DESC
         `);
 
-        // Also fetch list of all active projects for the create-dropdown
+        // Only fetch projects that have a valid wa_number for the create-dropdown
+        // Projects without wa_number cannot receive incoming WhatsApp messages,
+        // so QR codes for them would not work end-to-end
         const [projects] = await pool.query(
-            "SELECT project_id, project_name, profile_picture FROM aisensy_projects WHERE status = '1' ORDER BY project_name ASC"
+            "SELECT project_id, project_name, profile_picture, wa_number FROM aisensy_projects WHERE status = '1' AND wa_number IS NOT NULL AND wa_number != '' ORDER BY project_name ASC"
         );
 
         return res.status(200).json({
@@ -91,9 +94,9 @@ router.post("/admin/generate", authAdmin, async (req, res) => {
             return res.status(400).json({ error: "project_id is required" });
         }
 
-        // Verify project exists
+        // Verify project exists and has a valid wa_number
         const [projectRows] = await pool.query(
-            "SELECT project_id, project_name, profile_picture FROM aisensy_projects WHERE project_id = ? AND status = '1'",
+            "SELECT project_id, project_name, profile_picture, wa_number FROM aisensy_projects WHERE project_id = ? AND status = '1'",
             [project_id]
         );
 
@@ -102,6 +105,14 @@ router.post("/admin/generate", authAdmin, async (req, res) => {
         }
 
         const project = projectRows[0];
+
+        // Block QR generation if project has no WABA number
+        if (!project.wa_number || project.wa_number.trim() === '') {
+            return res.status(400).json({ 
+                error: "This project does not have a WhatsApp Business number (WABA) configured. Please connect a WABA number to this project before generating a QR code." 
+            });
+        }
+
         const qr_id = RANDOM_STRING(20);
         const created_by = req.admin.username || "admin";
 
@@ -316,10 +327,10 @@ router.get("/validate/:qr_id", async (req, res) => {
         // Format clean WhatsApp number (keep only digits)
         const cleanWaNumber = project.wa_number.replace(/\D/g, "");
 
-        // Construct default message containing the project ID
+        // Construct default message containing the project ID and QR reference
         const messageText = qrCode.label
-            ? `${qrCode.label} (Project ID: ${project.project_id})`
-            : `Hello! I'd like to connect. (Project ID: ${project.project_id})`;
+            ? `${qrCode.label} (Project ID: ${project.project_id}) [Ref: ${qrCode.qr_id}]`
+            : `Hello! I'd like to connect. (Project ID: ${project.project_id}) [Ref: ${qrCode.qr_id}]`;
 
         return res.status(200).json({
             error: false,
@@ -544,6 +555,35 @@ router.post("/scan-action", async (req, res) => {
                 image: element.profile_picture || "",
             }));
 
+            // Also auto-record into qr_scanned_users if not existing for this project & mobile
+            try {
+                const [existingScanned] = await pool.query(
+                    "SELECT id FROM qr_scanned_users WHERE project_id = ? AND mobile = ? AND status = '1'",
+                    [project_id, mobile]
+                );
+                if (existingScanned.length === 0) {
+                    const scan_id = RANDOM_STRING(20);
+                    await pool.query(
+                        `INSERT INTO qr_scanned_users 
+                        (scan_id, project_id, qr_id, name, mobile, email, company, added_by, status, create_date) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '1', ?)`,
+                        [
+                            scan_id,
+                            project_id,
+                            qr_id,
+                            profile.name || name || "Scanned User",
+                            mobile,
+                            profile.email || email || null,
+                            profile.firm_name || firm_name || null,
+                            user_username,
+                            TIMESTAMP()
+                        ]
+                    );
+                }
+            } catch (scanRecordErr) {
+                console.error("Failed to auto-record scanned user:", scanRecordErr);
+            }
+
             return res.status(200).json({
                 error: false,
                 action: "open_chatroom",
@@ -609,6 +649,395 @@ router.post("/scan-action", async (req, res) => {
     } catch (error) {
         console.error("QR scan-action error:", error);
         return res.status(200).json({ error: "Something went wrong. Please try again." });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECT OWNER: SCANNED USERS MANAGEMENT ROUTES (Authenticated)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /qrcode/scanned-users/list — Get list of scanned users for a project
+router.post("/scanned-users/list", auth, async (req, res) => {
+    try {
+        let data = "";
+        let key = "";
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || "";
+            key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] || "";
+        const project_id = decrypt.project_id;
+        const search = decrypt.search ? decrypt.search.trim() : "";
+        const page = Math.max(1, parseInt(decrypt.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(decrypt.limit) || 20));
+        const offset = (page - 1) * limit;
+
+        if (!project_id) {
+            return res.status(200).json({ error: "project_id is required" });
+        }
+
+        // Check project access
+        const [check_mapping] = await pool.query(
+            "SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0'",
+            [project_id, username]
+        );
+
+        if (check_mapping.length === 0) {
+            return res.status(200).json({ error: "Unauthorized access to project" });
+        }
+
+        let whereClause = "WHERE u.project_id = ? AND u.status = '1'";
+        const queryParams = [project_id];
+
+        if (search) {
+            whereClause += " AND (u.name LIKE ? OR u.mobile LIKE ? OR u.email LIKE ? OR u.company LIKE ? OR u.tags LIKE ?)";
+            const searchParam = `%${search}%`;
+            queryParams.push(searchParam, searchParam, searchParam, searchParam, searchParam);
+        }
+
+        // Count total matching
+        const [countResult] = await pool.query(
+            `SELECT COUNT(*) AS total FROM qr_scanned_users u ${whereClause}`,
+            queryParams
+        );
+        const total = countResult[0]?.total || 0;
+
+        // Fetch records with QR code label joined
+        const listParams = [...queryParams, limit, offset];
+        const [rows] = await pool.query(
+            `SELECT 
+                u.id,
+                u.scan_id,
+                u.project_id,
+                u.qr_id,
+                u.name,
+                u.mobile,
+                u.email,
+                u.dob,
+                u.anniversary,
+                u.address,
+                u.company,
+                u.notes,
+                u.tags,
+                u.added_by,
+                u.status,
+                u.create_date,
+                u.modify_date,
+                q.label AS qr_label
+            FROM qr_scanned_users u
+            LEFT JOIN project_qr_codes q ON q.qr_id = u.qr_id
+            ${whereClause}
+            ORDER BY u.id DESC
+            LIMIT ? OFFSET ?`,
+            listParams
+        );
+
+        return res.status(200).json({
+            error: false,
+            data: rows,
+            pagination: {
+                total,
+                page,
+                limit,
+                total_pages: Math.ceil(total / limit) || 1
+            }
+        });
+    } catch (error) {
+        console.error("Scanned users list error:", error);
+        return res.status(200).json({ error: "Failed to fetch scanned users" });
+    }
+});
+
+// POST /qrcode/scanned-users/add — Project owner manually adds a scanned user
+router.post("/scanned-users/add", auth, async (req, res) => {
+    try {
+        let data = "";
+        let key = "";
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || "";
+            key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] || "";
+        const {
+            project_id,
+            qr_id,
+            name,
+            mobile,
+            email,
+            dob,
+            anniversary,
+            address,
+            company,
+            notes,
+            tags
+        } = decrypt;
+
+        if (!project_id) {
+            return res.status(200).json({ error: "project_id is required" });
+        }
+
+        if (!name || !name.trim()) {
+            return res.status(200).json({ error: "Name is required" });
+        }
+
+        if (!mobile || !mobile.trim()) {
+            return res.status(200).json({ error: "Mobile number is required" });
+        }
+
+        // Check project access
+        const [check_mapping] = await pool.query(
+            "SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0'",
+            [project_id, username]
+        );
+
+        if (check_mapping.length === 0) {
+            return res.status(200).json({ error: "Unauthorized access to project" });
+        }
+
+        const scan_id = RANDOM_STRING(20);
+
+        await pool.query(
+            `INSERT INTO qr_scanned_users 
+            (scan_id, project_id, qr_id, name, mobile, email, dob, anniversary, address, company, notes, tags, added_by, status, create_date) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1', ?)`,
+            [
+                scan_id,
+                project_id,
+                qr_id || null,
+                name.trim(),
+                mobile.trim(),
+                email ? email.trim() : null,
+                dob || null,
+                anniversary || null,
+                address ? address.trim() : null,
+                company ? company.trim() : null,
+                notes ? notes.trim() : null,
+                tags ? tags.trim() : null,
+                username,
+                TIMESTAMP()
+            ]
+        );
+
+        return res.status(200).json({
+            error: false,
+            msg: "Scanned user record added successfully",
+            scan_id
+        });
+    } catch (error) {
+        console.error("Scanned user add error:", error);
+        return res.status(200).json({ error: "Failed to add scanned user record" });
+    }
+});
+
+// POST /qrcode/scanned-users/update — Update a scanned user record
+router.post("/scanned-users/update", auth, async (req, res) => {
+    try {
+        let data = "";
+        let key = "";
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || "";
+            key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] || "";
+        const {
+            scan_id,
+            project_id,
+            qr_id,
+            name,
+            mobile,
+            email,
+            dob,
+            anniversary,
+            address,
+            company,
+            notes,
+            tags
+        } = decrypt;
+
+        if (!scan_id || !project_id) {
+            return res.status(200).json({ error: "scan_id and project_id are required" });
+        }
+
+        if (!name || !name.trim()) {
+            return res.status(200).json({ error: "Name is required" });
+        }
+
+        if (!mobile || !mobile.trim()) {
+            return res.status(200).json({ error: "Mobile number is required" });
+        }
+
+        // Check project access
+        const [check_mapping] = await pool.query(
+            "SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0'",
+            [project_id, username]
+        );
+
+        if (check_mapping.length === 0) {
+            return res.status(200).json({ error: "Unauthorized access to project" });
+        }
+
+        const [result] = await pool.query(
+            `UPDATE qr_scanned_users 
+            SET 
+                name = ?,
+                mobile = ?,
+                email = ?,
+                dob = ?,
+                anniversary = ?,
+                address = ?,
+                company = ?,
+                notes = ?,
+                tags = ?,
+                modify_date = ?
+            WHERE scan_id = ? AND project_id = ? AND status = '1'`,
+            [
+                name.trim(),
+                mobile.trim(),
+                email ? email.trim() : null,
+                dob || null,
+                anniversary || null,
+                address ? address.trim() : null,
+                company ? company.trim() : null,
+                notes ? notes.trim() : null,
+                tags ? tags.trim() : null,
+                TIMESTAMP(),
+                scan_id,
+                project_id
+            ]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(200).json({ error: "Scanned user record not found" });
+        }
+
+        return res.status(200).json({
+            error: false,
+            msg: "Scanned user record updated successfully"
+        });
+    } catch (error) {
+        console.error("Scanned user update error:", error);
+        return res.status(200).json({ error: "Failed to update scanned user record" });
+    }
+});
+
+// POST /qrcode/scanned-users/delete — Soft-delete a scanned user record
+router.post("/scanned-users/delete", auth, async (req, res) => {
+    try {
+        let data = "";
+        let key = "";
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || "";
+            key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] || "";
+        const { scan_id, project_id } = decrypt;
+
+        if (!scan_id || !project_id) {
+            return res.status(200).json({ error: "scan_id and project_id are required" });
+        }
+
+        // Check project access
+        const [check_mapping] = await pool.query(
+            "SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0'",
+            [project_id, username]
+        );
+
+        if (check_mapping.length === 0) {
+            return res.status(200).json({ error: "Unauthorized access to project" });
+        }
+
+        const [result] = await pool.query(
+            "UPDATE qr_scanned_users SET status = '0', modify_date = ? WHERE scan_id = ? AND project_id = ?",
+            [TIMESTAMP(), scan_id, project_id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(200).json({ error: "Scanned user record not found" });
+        }
+
+        return res.status(200).json({
+            error: false,
+            msg: "Scanned user record deleted successfully"
+        });
+    } catch (error) {
+        console.error("Scanned user delete error:", error);
+        return res.status(200).json({ error: "Failed to delete scanned user record" });
+    }
+});
+
+// POST /qrcode/scanned-users/count — Get total count of scanned users for project
+router.post("/scanned-users/count", auth, async (req, res) => {
+    try {
+        let data = "";
+        let key = "";
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || "";
+            key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] || "";
+        const { project_id } = decrypt;
+
+        if (!project_id) {
+            return res.status(200).json({ error: "project_id is required" });
+        }
+
+        // Check project access
+        const [check_mapping] = await pool.query(
+            "SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0'",
+            [project_id, username]
+        );
+
+        if (check_mapping.length === 0) {
+            return res.status(200).json({ error: "Unauthorized access to project" });
+        }
+
+        const [countRow] = await pool.query(
+            "SELECT COUNT(*) AS total FROM qr_scanned_users WHERE project_id = ? AND status = '1'",
+            [project_id]
+        );
+
+        return res.status(200).json({
+            error: false,
+            total: Number(countRow[0]?.total) || 0
+        });
+    } catch (error) {
+        console.error("Scanned users count error:", error);
+        return res.status(200).json({ error: "Failed to count scanned users" });
     }
 });
 

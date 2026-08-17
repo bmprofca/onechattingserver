@@ -244,6 +244,12 @@ router.post("/dashboard", auth, async (req, res) => {
     const pending_template = Number(template_row[0]?.pending);
     const rejected_template = Number(template_row[0]?.rejected);
 
+    const [scanned_users_row] = await pool.query(
+        "SELECT COUNT(*) AS total FROM qr_scanned_users WHERE project_id = ? AND status = '1'",
+        [project_id]
+    );
+    const total_scanned_users = Number(scanned_users_row[0]?.total) || 0;
+
     return res.status(200).json({
         error: false,
         data: {
@@ -273,6 +279,9 @@ router.post("/dashboard", auth, async (req, res) => {
             message: {
                 total: message_row.length,
                 today_sent: today_out_row.length
+            },
+            qr_scanned_users: {
+                total: total_scanned_users
             }
         }
     })

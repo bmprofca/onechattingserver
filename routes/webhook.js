@@ -302,6 +302,83 @@ async function __ensureCaseAndAddMessage(project_id, number, message_unique_id) 
     );
 }
 
+/**
+ * For an incoming WhatsApp message: auto-record customer into qr_scanned_users
+ * with their profile name and mobile number, linked to the scanned QR code.
+ */
+async function __ensureScannedUserFromWebhook(project_id, sender, contactName, messageText) {
+    try {
+        if (!project_id || !sender) return;
+        const cleanMobile = String(sender).replace(/\D/g, "");
+        if (!cleanMobile) return;
+
+        // 1. Check if message has [Ref: <qr_id>]
+        let linked_qr_id = null;
+        const refMatch = messageText ? messageText.match(/\[Ref:\s*([a-zA-Z0-9_-]+)\]/i) : null;
+        if (refMatch && refMatch[1]) {
+            linked_qr_id = refMatch[1];
+        }
+
+        // 2. Fetch active QR codes for this project
+        const [qrs] = await pool.query(
+            "SELECT qr_id, label FROM project_qr_codes WHERE project_id = ? AND status = '1'",
+            [project_id]
+        );
+
+        if (!linked_qr_id && messageText && qrs.length > 0) {
+            for (const q of qrs) {
+                if (
+                    messageText.includes(q.qr_id) ||
+                    (q.label && messageText.toLowerCase().includes(q.label.toLowerCase()))
+                ) {
+                    linked_qr_id = q.qr_id;
+                    break;
+                }
+            }
+        }
+
+        // 3. If there is only 1 QR code for this project, link to it by default
+        if (!linked_qr_id && qrs.length === 1) {
+            linked_qr_id = qrs[0].qr_id;
+        }
+
+        const name = (contactName && contactName.trim()) ? contactName.trim() : `WhatsApp User (+${cleanMobile})`;
+
+        // Check existing record in qr_scanned_users
+        const [existing] = await pool.query(
+            "SELECT id, name, qr_id FROM qr_scanned_users WHERE project_id = ? AND mobile = ? AND status = '1' LIMIT 1",
+            [project_id, cleanMobile]
+        );
+
+        if (existing.length === 0) {
+            const scan_id = RANDOM_STRING(20);
+            await pool.query(
+                `INSERT INTO qr_scanned_users 
+                (scan_id, project_id, qr_id, name, mobile, added_by, status, create_date) 
+                VALUES (?, ?, ?, ?, ?, 'WHATSAPP_QR', '1', ?)`,
+                [scan_id, project_id, linked_qr_id, name, cleanMobile, TIMESTAMP()]
+            );
+        } else {
+            // Update name if previously generic, or update qr_id if not linked
+            const currentName = existing[0].name || "";
+            const isGenericName = currentName.startsWith("WhatsApp User") || currentName.startsWith("User ");
+            const shouldUpdateName = isGenericName && contactName && contactName.trim();
+            const shouldUpdateQr = linked_qr_id && !existing[0].qr_id;
+
+            if (shouldUpdateName || shouldUpdateQr) {
+                const newName = shouldUpdateName ? contactName.trim() : currentName;
+                const newQr = shouldUpdateQr ? linked_qr_id : existing[0].qr_id;
+                await pool.query(
+                    "UPDATE qr_scanned_users SET name = ?, qr_id = ?, modify_date = ? WHERE id = ?",
+                    [newName, newQr, TIMESTAMP(), existing[0].id]
+                );
+            }
+        }
+    } catch (err) {
+        console.error("[scanned-users] auto-record webhook error:", err?.message || err);
+    }
+}
+
 async function __handleWebhookPayload(project_id, json, raw_json) {
     // keep your test logging
     // await pool.query("INSERT INTO `test`(`value`) VALUES (?)", [raw_json]);
@@ -314,6 +391,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
 
         const changes = changes0?.value || {};
         const field = changes0?.field;
+        const contactName = changes?.contacts?.[0]?.profile?.name || "";
 
         const messages = changes.messages;
         const message_echoes = changes.message_echoes;
@@ -325,9 +403,13 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                 const messageType = message.type;
                 const unique_id = RANDOM_STRING(30);
                 const wamid = message?.id;
+                const sender = message?.from;
+
+                // Auto-record user to qr_scanned_users table
+                const msgBody = message?.text?.body || message?.image?.caption || message?.video?.caption || "";
+                await __ensureScannedUserFromWebhook(project_id, sender, contactName, msgBody);
 
                 if (messageType === "text") {
-                    const sender = message?.from;
                     const msg = message?.text?.body;
                     const is_forwarded = message?.context?.forwarded ? "1" : "0";
                     const reply_wamid = message?.context?.id || null;
