@@ -29,6 +29,7 @@ import developerRouter from "./developerRoutes/index.js";
 import developerSettingsRouter from "./routes/developer.js";
 import { generateSummary } from "./generate-db-summary.js";
 import subscriptionRouter from "./routes/subscription.js";
+import qrcodeRouter from "./routes/qrcode.js";
 
 const app = express();
 
@@ -140,6 +141,8 @@ app.use("/company", companyRouter);
 app.use("/test", testRouter);
 app.use("/bot-reply", botReplyRouter);
 app.use("/subscription", subscriptionRouter);
+app.use("/qrcode", qrcodeRouter);
+app.use("/admin/qrcode", qrcodeRouter);
 
 app.use("/admin", adminRouter);
 app.use("/plan", planRouter);

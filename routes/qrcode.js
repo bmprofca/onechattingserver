@@ -1,0 +1,638 @@
+import express from "express";
+import pool from "../db.js";
+import { RANDOM_STRING, TIMESTAMP, FUTURE_TIMESTAMP } from "../helpers/function.js";
+import { Decrypt } from "../helpers/Decrypt.js";
+import { auth } from "../middleware/auth.js";
+import { sendOtpSms } from "../helpers/sms.js";
+import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
+import { getAdminByToken } from "../helpers/adminDb.js";
+
+const router = express.Router();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN AUTH MIDDLEWARE
+// ─────────────────────────────────────────────────────────────────────────────
+const authAdmin = async (req, res, next) => {
+    try {
+        let token =
+            req.headers["x-auth-token"] ||
+            req.headers["x-token"] ||
+            req.headers["authorization"];
+
+        if (!token) {
+            return res.status(401).json({ error: "Auth token required." });
+        }
+
+        if (typeof token === "string" && token.startsWith("Bearer ")) {
+            token = token.slice(7).trim();
+        }
+
+        const admin = await getAdminByToken(token);
+
+        if (!admin) {
+            return res.status(401).json({ error: "Invalid or expired token." });
+        }
+
+        req.admin = admin;
+        req.token = token;
+        next();
+    } catch (err) {
+        return res.status(500).json({ error: "Server error." });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /qrcode/admin/all — List all QR codes across all projects with project info
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/admin/all", authAdmin, async (req, res) => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT 
+                q.id,
+                q.qr_id,
+                q.project_id,
+                q.label,
+                q.status,
+                q.scan_count,
+                q.created_by,
+                q.create_date,
+                q.modify_date,
+                p.project_name,
+                p.profile_picture
+            FROM project_qr_codes q
+            LEFT JOIN aisensy_projects p ON p.project_id = q.project_id
+            ORDER BY q.create_date DESC
+        `);
+
+        // Also fetch list of all active projects for the create-dropdown
+        const [projects] = await pool.query(
+            "SELECT project_id, project_name, profile_picture FROM aisensy_projects WHERE status = '1' ORDER BY project_name ASC"
+        );
+
+        return res.status(200).json({
+            error: false,
+            qr_codes: rows,
+            projects: projects
+        });
+    } catch (error) {
+        console.error("Admin QR list all error:", error);
+        return res.status(500).json({ error: "Failed to fetch all QR codes" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /qrcode/admin/generate — Admin panel generates QR code for any project
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/admin/generate", authAdmin, async (req, res) => {
+    try {
+        const { project_id, label } = req.body;
+
+        if (!project_id) {
+            return res.status(400).json({ error: "project_id is required" });
+        }
+
+        // Verify project exists
+        const [projectRows] = await pool.query(
+            "SELECT project_id, project_name, profile_picture FROM aisensy_projects WHERE project_id = ? AND status = '1'",
+            [project_id]
+        );
+
+        if (projectRows.length === 0) {
+            return res.status(404).json({ error: "Project not found or inactive" });
+        }
+
+        const project = projectRows[0];
+        const qr_id = RANDOM_STRING(20);
+        const created_by = req.admin.username || "admin";
+
+        await pool.query(
+            "INSERT INTO project_qr_codes (qr_id, project_id, label, created_by, create_date) VALUES (?, ?, ?, ?, ?)",
+            [qr_id, project_id, label || null, created_by, TIMESTAMP()]
+        );
+
+        return res.status(200).json({
+            error: false,
+            msg: "QR code generated successfully",
+            qr_code: {
+                qr_id,
+                project_id,
+                project_name: project.project_name,
+                label: label || null,
+                status: "1",
+                scan_count: 0,
+                create_date: TIMESTAMP(),
+            },
+        });
+    } catch (error) {
+        console.error("QR generate error:", error);
+        return res.status(500).json({ error: "Failed to generate QR code" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /qrcode/admin/list/:project_id — Admin lists QR codes for a specific project
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/admin/list/:project_id", authAdmin, async (req, res) => {
+    try {
+        const { project_id } = req.params;
+
+        const [rows] = await pool.query(
+            "SELECT qr_id, project_id, label, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? ORDER BY create_date DESC",
+            [project_id]
+        );
+
+        return res.status(200).json({
+            error: false,
+            qr_codes: rows,
+        });
+    } catch (error) {
+        console.error("QR list error:", error);
+        return res.status(500).json({ error: "Failed to fetch QR codes" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /qrcode/admin/toggle-status — Admin toggles QR code active/inactive
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/admin/toggle-status", authAdmin, async (req, res) => {
+    try {
+        const { qr_id, status } = req.body;
+
+        if (!qr_id || !["0", "1"].includes(status)) {
+            return res.status(400).json({ error: "qr_id and valid status (0 or 1) are required" });
+        }
+
+        const [result] = await pool.query(
+            "UPDATE project_qr_codes SET status = ?, modify_date = ? WHERE qr_id = ?",
+            [status, TIMESTAMP(), qr_id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "QR code not found" });
+        }
+
+        return res.status(200).json({
+            error: false,
+            msg: `QR code ${status === "1" ? "activated" : "deactivated"} successfully`,
+        });
+    } catch (error) {
+        console.error("QR toggle error:", error);
+        return res.status(500).json({ error: "Failed to update QR code status" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /qrcode/admin/delete — Admin deletes a QR code
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/admin/delete", authAdmin, async (req, res) => {
+    try {
+        const { qr_id } = req.body;
+
+        if (!qr_id) {
+            return res.status(400).json({ error: "qr_id is required" });
+        }
+
+        const [result] = await pool.query(
+            "DELETE FROM project_qr_codes WHERE qr_id = ?",
+            [qr_id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "QR code not found" });
+        }
+
+        return res.status(200).json({
+            error: false,
+            msg: "QR code deleted successfully",
+        });
+    } catch (error) {
+        console.error("QR delete error:", error);
+        return res.status(500).json({ error: "Failed to delete QR code" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT WEB ROUTES (Read-Only: Project members can ONLY view existing QR codes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /qrcode/list — Project members can view generated QR codes for their project
+router.post("/list", auth, async (req, res) => {
+    try {
+        let data = "";
+        let key = "";
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || "";
+            key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] || "";
+        const project_id = decrypt.project_id;
+
+        if (!project_id) {
+            return res.status(200).json({ error: "project_id is required" });
+        }
+
+        // Check project access
+        const [check_mapping] = await pool.query(
+            "SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0'",
+            [project_id, username]
+        );
+
+        if (check_mapping.length === 0) {
+            return res.status(200).json({ error: "Unauthorized access" });
+        }
+
+        const [rows] = await pool.query(
+            "SELECT qr_id, project_id, label, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? AND status = '1' ORDER BY create_date DESC",
+            [project_id]
+        );
+
+        return res.status(200).json({
+            error: false,
+            qr_codes: rows,
+        });
+    } catch (error) {
+        console.error("Client QR list error:", error);
+        return res.status(200).json({ error: "Failed to fetch QR codes" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC ROUTES (no auth — called on QR scan)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /qrcode/validate/:qr_id — Validate QR code and return project info
+router.get("/validate/:qr_id", async (req, res) => {
+    try {
+        const { qr_id } = req.params;
+
+        if (!qr_id) {
+            return res.status(200).json({ error: "QR code ID is required" });
+        }
+
+        const [qrRows] = await pool.query(
+            "SELECT qr_id, project_id, label, status FROM project_qr_codes WHERE qr_id = ?",
+            [qr_id]
+        );
+
+        if (qrRows.length === 0) {
+            return res.status(200).json({ error: "Invalid QR code" });
+        }
+
+        const qrCode = qrRows[0];
+
+        if (qrCode.status !== "1") {
+            return res.status(200).json({ error: "This QR code has been deactivated" });
+        }
+
+        // Get project info
+        const [projectRows] = await pool.query(
+            "SELECT project_id, project_name, profile_picture FROM aisensy_projects WHERE project_id = ? AND status = '1'",
+            [qrCode.project_id]
+        );
+
+        if (projectRows.length === 0) {
+            return res.status(200).json({ error: "Project not found or inactive" });
+        }
+
+        const project = projectRows[0];
+
+        // Increment scan count (fire and forget)
+        pool.query(
+            "UPDATE project_qr_codes SET scan_count = scan_count + 1 WHERE qr_id = ?",
+            [qr_id]
+        ).catch(() => {});
+
+        return res.status(200).json({
+            error: false,
+            project: {
+                project_id: project.project_id,
+                project_name: project.project_name,
+                profile_picture: project.profile_picture || "",
+            },
+            qr_label: qrCode.label || "",
+        });
+    } catch (error) {
+        console.error("QR validate error:", error);
+        return res.status(200).json({ error: "Failed to validate QR code" });
+    }
+});
+
+// POST /qrcode/scan-action — Main orchestration endpoint
+// Handles: verify session -> register if needed -> map to project -> return token
+router.post("/scan-action", async (req, res) => {
+    try {
+        const {
+            qr_id,
+            token,
+            username,
+            name,
+            mobile,
+            country_code,
+            email,
+            firm_name,
+            otp,
+        } = req.body;
+
+        if (!qr_id) {
+            return res.status(200).json({ error: "QR code ID is required" });
+        }
+
+        // 1. Validate QR code
+        const [qrRows] = await pool.query(
+            "SELECT qr_id, project_id, status FROM project_qr_codes WHERE qr_id = ? AND status = '1'",
+            [qr_id]
+        );
+
+        if (qrRows.length === 0) {
+            return res.status(200).json({ error: "Invalid or inactive QR code" });
+        }
+
+        const project_id = qrRows[0].project_id;
+
+        // Verify project is active
+        const [projectRows] = await pool.query(
+            "SELECT project_id, project_name FROM aisensy_projects WHERE project_id = ? AND status = '1'",
+            [project_id]
+        );
+
+        if (projectRows.length === 0) {
+            return res.status(200).json({ error: "Project not found or inactive" });
+        }
+
+        const project_name = projectRows[0].project_name;
+
+        // 2. If token + username provided, try existing session
+        if (token && username) {
+            // Verify the token is valid
+            const [tokenRows] = await pool.query(
+                "SELECT login_token.id, users.status AS user_status, users.username, users.name, users.mobile, users.email FROM login_token JOIN users ON users.username = login_token.username WHERE login_token.token = ? AND login_token.username = ? AND login_token.status = '1' LIMIT 1",
+                [token, username]
+            );
+
+            if (tokenRows.length === 1 && tokenRows[0].user_status === "1") {
+                // Valid session — check/create mapping
+                const result = await ensureProjectMapping(username, project_id);
+
+                if (result.error) {
+                    return res.status(200).json({ error: result.error });
+                }
+
+                // Get updated project list for user
+                const [allProjects] = await pool.query(
+                    "SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = '0' AND aisensy_projects.status = '1'",
+                    [username]
+                );
+
+                const projects = allProjects.map((element) => ({
+                    name: element.project_name,
+                    project_id: element.project_id,
+                    owned: element.type === "admin",
+                    profile_picture: element.profile_picture || "",
+                    profile_image: element.profile_picture || "",
+                    logo: element.profile_picture || "",
+                    image: element.profile_picture || "",
+                }));
+
+                return res.status(200).json({
+                    error: false,
+                    action: "open_chatroom",
+                    project_id,
+                    project_name,
+                    token,
+                    username,
+                    is_new_mapping: result.is_new,
+                    projects,
+                    project_count: projects.length,
+                });
+            }
+
+            // Token invalid — fall through to require auth
+            return res.status(200).json({
+                error: false,
+                action: "require_auth",
+                msg: "Session expired. Please login again.",
+            });
+        }
+
+        // 3. If mobile + otp provided, handle login/register flow
+        if (mobile && otp) {
+            // Verify OTP
+            const [otpRows] = await pool.query(
+                "SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1",
+                [mobile, otp]
+            );
+
+            if (otpRows.length === 0) {
+                return res.status(200).json({ error: "Invalid or expired OTP" });
+            }
+
+            // Mark OTP as verified
+            await pool.query(
+                "UPDATE otp_verifications SET status = 'verified' WHERE id = ?",
+                [otpRows[0].id]
+            );
+
+            // Check if user exists
+            const [userRows] = await pool.query(
+                "SELECT * FROM users WHERE mobile = ?",
+                [mobile]
+            );
+
+            let user_username;
+            let is_new_user = false;
+
+            if (userRows.length > 0) {
+                // Existing user — login
+                user_username = userRows[0].username;
+            } else {
+                // New user — register
+                if (!name) {
+                    return res.status(200).json({ error: "Name is required for registration" });
+                }
+
+                user_username = RANDOM_STRING(20);
+                is_new_user = true;
+
+                const user_country_code = country_code || "91";
+                const user_email = email || "";
+                const user_firm_name = firm_name || name;
+
+                await pool.query(
+                    "INSERT INTO users (username, email, name, country_code, mobile, create_date, create_by, modify_date, modify_by, status, firm_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        user_username,
+                        user_email,
+                        name,
+                        user_country_code,
+                        mobile,
+                        TIMESTAMP(),
+                        user_username,
+                        TIMESTAMP(),
+                        user_username,
+                        "1",
+                        user_firm_name,
+                    ]
+                );
+            }
+
+            // Generate login token
+            const new_token = RANDOM_STRING(50);
+            await pool.query(
+                "INSERT INTO login_token (username, create_date, create_by, modify_date, modify_by, token, expire_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    user_username,
+                    TIMESTAMP(),
+                    user_username,
+                    TIMESTAMP(),
+                    user_username,
+                    new_token,
+                    FUTURE_TIMESTAMP(43200), // 30 days
+                    "1",
+                ]
+            );
+
+            // Ensure project mapping
+            const mapResult = await ensureProjectMapping(user_username, project_id);
+
+            if (mapResult.error) {
+                return res.status(200).json({ error: mapResult.error });
+            }
+
+            // Get user profile
+            const [profileRows] = await pool.query(
+                "SELECT name, country_code, mobile, email, firm_name FROM users WHERE username = ?",
+                [user_username]
+            );
+
+            const profile = profileRows.length > 0 ? profileRows[0] : {};
+
+            // Get all projects for this user
+            const [allProjects] = await pool.query(
+                "SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = '0' AND aisensy_projects.status = '1'",
+                [user_username]
+            );
+
+            const projects = allProjects.map((element) => ({
+                name: element.project_name,
+                project_id: element.project_id,
+                owned: element.type === "admin",
+                profile_picture: element.profile_picture || "",
+                profile_image: element.profile_picture || "",
+                logo: element.profile_picture || "",
+                image: element.profile_picture || "",
+            }));
+
+            return res.status(200).json({
+                error: false,
+                action: "open_chatroom",
+                project_id,
+                project_name,
+                token: new_token,
+                username: user_username,
+                is_new_user,
+                is_new_mapping: mapResult.is_new,
+                profile: {
+                    name: profile.name,
+                    country_code: profile.country_code,
+                    mobile: profile.mobile,
+                    email: profile.email,
+                },
+                projects,
+                project_count: projects.length,
+            });
+        }
+
+        // 4. If only mobile provided (no OTP), send OTP
+        if (mobile && !otp) {
+            // Generate and send OTP
+            const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+            const expire_date = FUTURE_TIMESTAMP(10); // 10 minutes
+
+            await pool.query(
+                "INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')",
+                [mobile, generatedOtp, expire_date]
+            );
+
+            // Send OTP via WhatsApp and SMS
+            try {
+                await sendOtpWhatsApp(mobile, generatedOtp);
+                await sendOtpSms(mobile, generatedOtp);
+            } catch (otpSendError) {
+                console.error("Failed to send OTP via QR scan:", otpSendError);
+            }
+
+            // Check if user exists (to tell frontend if registration fields are needed)
+            const [existingUser] = await pool.query(
+                "SELECT username, name, email, firm_name FROM users WHERE mobile = ?",
+                [mobile]
+            );
+
+            return res.status(200).json({
+                error: false,
+                action: "otp_sent",
+                msg: "OTP sent successfully",
+                is_existing_user: existingUser.length > 0,
+                user_info: existingUser.length > 0 ? {
+                    name: existingUser[0].name,
+                    email: existingUser[0].email,
+                    firm_name: existingUser[0].firm_name
+                } : null
+            });
+        }
+
+        // No valid action possible
+        return res.status(200).json({
+            error: "Please provide either login credentials or mobile number",
+        });
+    } catch (error) {
+        console.error("QR scan-action error:", error);
+        return res.status(200).json({ error: "Something went wrong. Please try again." });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: Ensure a user is mapped to a project
+// ─────────────────────────────────────────────────────────────────────────────
+async function ensureProjectMapping(username, project_id) {
+    try {
+        // Check existing mapping
+        const [existingMapping] = await pool.query(
+            "SELECT id FROM project_mapping WHERE username = ? AND project_id = ? AND is_deleted = '0'",
+            [username, project_id]
+        );
+
+        if (existingMapping.length > 0) {
+            return { is_new: false };
+        }
+
+        // Create new mapping
+        const unique_id = RANDOM_STRING(30);
+
+        await pool.query(
+            "INSERT INTO project_mapping (unique_id, project_id, username, type, create_by, create_date, modify_by, modify_date, is_deleted) VALUES (?, ?, ?, 'agent', ?, ?, ?, ?, '0')",
+            [
+                unique_id,
+                project_id,
+                username,
+                username,
+                TIMESTAMP(),
+                username,
+                TIMESTAMP(),
+            ]
+        );
+
+        return { is_new: true };
+    } catch (error) {
+        console.error("ensureProjectMapping error:", error);
+        return { error: "Failed to create project mapping" };
+    }
+}
+
+export default router;

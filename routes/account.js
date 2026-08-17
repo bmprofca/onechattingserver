@@ -110,6 +110,10 @@ router.post("/login", async (req, res) => {
                 name: element.project_name,
                 project_id: element.project_id,
                 owned: element.type == 'admin' ? true : false,
+                profile_picture: element.profile_picture || "",
+                profile_image: element.profile_picture || "",
+                logo: element.profile_picture || "",
+                image: element.profile_picture || "",
             }
 
             projects.push(project_object);
@@ -200,6 +204,11 @@ router.post("/register", async (req, res) => {
             var project_object = {
                 name: element.project_name,
                 project_id: element.project_id,
+                owned: element.type == 'admin' ? true : false,
+                profile_picture: element.profile_picture || "",
+                profile_image: element.profile_picture || "",
+                logo: element.profile_picture || "",
+                image: element.profile_picture || "",
             }
 
             projects.push(project_object);
@@ -287,6 +296,10 @@ router.post("/profile", auth, async (req, res) => {
                 name: element.project_name,
                 project_id,
                 owned: element.type == 'admin' ? true : false,
+                profile_picture: element.profile_picture || "",
+                profile_image: element.profile_picture || "",
+                logo: element.profile_picture || "",
+                image: element.profile_picture || "",
                 owner_name: admin_details.name,
             };
 
@@ -437,9 +450,14 @@ router.post('/google-login', async (req, res) => {
         if (project_row.length > 0) {
             project_row.forEach(element => {
                 var project_object = {
-                    name: element.project_name,
-                    project_id: element.project_id,
-                }
+                name: element.project_name,
+                project_id: element.project_id,
+                owned: element.type == 'admin' ? true : false,
+                profile_picture: element.profile_picture || "",
+                profile_image: element.profile_picture || "",
+                logo: element.profile_picture || "",
+                image: element.profile_picture || "",
+            }
 
                 projects.push(project_object);
             });
@@ -523,9 +541,14 @@ router.post('/google-register', async (req, res) => {
         if (project_row.length > 0) {
             project_row.forEach(element => {
                 var project_object = {
-                    name: element.project_name,
-                    project_id: element.project_id,
-                }
+                name: element.project_name,
+                project_id: element.project_id,
+                owned: element.type == 'admin' ? true : false,
+                profile_picture: element.profile_picture || "",
+                profile_image: element.profile_picture || "",
+                logo: element.profile_picture || "",
+                image: element.profile_picture || "",
+            }
 
                 projects.push(project_object);
             });
