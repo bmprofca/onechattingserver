@@ -5,7 +5,7 @@ import { GENERATE_PASSWORD, RANDOM_STRING, TIMESTAMP } from "../helpers/function
 import { Decrypt } from "../helpers/Decrypt.js";
 import { auth } from "../middleware/auth.js";
 import axios from "axios";
-import { AISENSY_API_KEY, AISENSY_PARTNER_ID } from "../helpers/Config.js";
+import { getActiveTechProvider } from "../helpers/techProvider.js";
 
 // login
 router.post("/create-business", auth, async (req, res) => {
@@ -31,14 +31,51 @@ router.post("/create-business", auth, async (req, res) => {
     }
 
     const project_password = GENERATE_PASSWORD(8);
+    const activeProvider = await getActiveTechProvider();
+
+    const conn = await pool.getConnection();
+
+    if (activeProvider.provider_type === "own_meta") {
+        try {
+            const business_id = `meta_b_${RANDOM_STRING(12)}`;
+            const project_id = `meta_p_${RANDOM_STRING(12)}`;
+
+            await pool.query(
+                "INSERT INTO `aisensy_projects`(`unique_id`, `project_id`, `project_name`, `business_id`, `tech_provider`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [RANDOM_STRING(20), project_id, company_name, business_id, 'own_meta', TIMESTAMP(), username, TIMESTAMP(), username, '1']
+            );
+
+            await pool.query(
+                "INSERT INTO `aisensy_businesses`(`unique_id`, `business_email`, `business_id`, `password`, `username`, `create_date`, `create_by`, `modify_date`, `modify_by`) VALUES (?,?,?,?,?,?,?,?,?)",
+                [RANDOM_STRING(20), project_email, business_id, project_password, username, TIMESTAMP(), username, TIMESTAMP(), username]
+            );
+
+            await conn.commit();
+            return res.status(200).json({
+                error: false,
+                msg: "Business created successfully"
+            });
+        } catch (error) {
+            await conn.rollback();
+            console.error("Meta business creation error:", error);
+            return res.status(200).json({ error: 'Failed to create business' });
+        }
+    }
+
+    const partnerId = activeProvider.aisensy_partner_id;
+    const apiKey = activeProvider.aisensy_api_key;
+
+    if (!partnerId || !apiKey) {
+        return res.status(200).json({ error: 'AiSensy tech provider credentials are not configured in system settings.' });
+    }
 
     const options = {
         method: 'POST',
-        url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/business`,
+        url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/business`,
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+            'X-AiSensy-Partner-API-Key': apiKey
         },
         data: {
             display_name: company_name,
@@ -51,9 +88,6 @@ router.post("/create-business", auth, async (req, res) => {
             password: project_password
         }
     };
-
-
-    const conn = await pool.getConnection();
 
 
     try {

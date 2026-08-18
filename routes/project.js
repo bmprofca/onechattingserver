@@ -5,9 +5,31 @@ import { AISENSY_PROJECT_DATA, GENERATE_EMAIL_ADDRESS, GENERATE_PASSWORD, GET_AD
 import { Decrypt } from "../helpers/Decrypt.js";
 import { auth } from "../middleware/auth.js";
 import axios from "axios";
-import { AISENSY_API_KEY, AISENSY_PARTNER_ID, BASE_DOMAIN, TEMPLATE_CHARGES } from "../helpers/Config.js";
+import { BASE_DOMAIN, TEMPLATE_CHARGES } from "../helpers/Config.js";
 import { activateProjectServices } from "../helpers/aisensyBilling.js";
 import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
+import { getActiveTechProvider, subscribeMetaWabaWebhook, exchangeMetaEmbeddedSignupCode } from "../helpers/techProvider.js";
+
+router.get("/embedded-signup-config", auth, async (req, res) => {
+    try {
+        const active = await getActiveTechProvider();
+        if (active.provider_type === "own") {
+            return res.status(200).json({
+                error: false,
+                provider: "own",
+                meta_app_id: active.meta_app_id || "",
+                meta_config_id: active.meta_config_id || "",
+                meta_graph_version: active.meta_graph_version || "v21.0"
+            });
+        }
+        return res.status(200).json({
+            error: false,
+            provider: "aisensy"
+        });
+    } catch (err) {
+        return res.status(500).json({ error: "Failed to fetch embedded signup config" });
+    }
+});
 
 router.post("/embed-signup", auth, async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
@@ -35,8 +57,20 @@ router.post("/embed-signup", auth, async (req, res) => {
         return res.status(200).json({ error: 'Unauthorized Access' })
     }
 
-    // CODE FOR FETCH AISENSY
+    const activeProvider = await getActiveTechProvider();
 
+    // If using Own Meta Tech Provider
+    if (activeProvider.provider_type === "own") {
+        return res.status(200).json({
+            error: false,
+            provider: "own",
+            app_id: activeProvider.meta_app_id || "",
+            config_id: activeProvider.meta_config_id || "",
+            graph_version: activeProvider.meta_graph_version || "v21.0"
+        });
+    }
+
+    // Default: AiSensy Partner flow
     const project_data = await AISENSY_PROJECT_DATA(project_id);
 
     if (!project_data) {
@@ -44,14 +78,16 @@ router.post("/embed-signup", auth, async (req, res) => {
     }
 
     const business_id = project_data.business_id;
+    const partnerId = activeProvider.aisensy_partner_id;
+    const apiKey = activeProvider.aisensy_api_key;
 
     const options = {
         method: 'POST',
-        url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/generate-waba-link`,
+        url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/generate-waba-link`,
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+            'X-AiSensy-Partner-API-Key': apiKey
         },
         data: {
             businessId: business_id,
@@ -64,6 +100,7 @@ router.post("/embed-signup", auth, async (req, res) => {
         const url = data?.embeddedSignupURL;
         return res.status(200).json({
             error: false,
+            provider: "aisensy",
             url
         })
     } catch (error) {
@@ -86,13 +123,15 @@ router.post("/submit-waba-id", auth, async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    console.log("Waba submit payload");
-    console.log(decrypt);
+    console.log("Waba submit payload", decrypt);
 
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;
     const waba_id = decrypt?.waba_id;
-    if (!project_id || !waba_id) {
+    const code = decrypt?.code;
+    const phone_number_id = decrypt?.phone_number_id;
+
+    if (!project_id || (!waba_id && !code)) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
     }
 
@@ -103,28 +142,65 @@ router.post("/submit-waba-id", auth, async (req, res) => {
         return res.status(200).json({ error: 'Unauthorized Access' })
     }
 
+    const activeProvider = await getActiveTechProvider();
+
+    // If using Own Meta Tech Provider
+    if (activeProvider.provider_type === "own") {
+        try {
+            if (code) {
+                await exchangeMetaEmbeddedSignupCode(
+                    code,
+                    activeProvider.meta_app_id,
+                    activeProvider.meta_app_secret,
+                    activeProvider.meta_graph_version || "v21.0"
+                );
+            }
+
+            // Update project tech provider & WABA status
+            await pool.query(
+                "UPDATE `aisensy_projects` SET `is_waba_connected` = '1', `tech_provider` = 'own', `meta_waba_id` = ?, `meta_phone_number_id` = ? WHERE `project_id` = ?",
+                [waba_id || null, phone_number_id || null, project_id]
+            );
+
+            // Subscribe WABA to webhook if system token is configured
+            if (waba_id && activeProvider.meta_system_user_token) {
+                await subscribeMetaWabaWebhook(
+                    waba_id,
+                    activeProvider.meta_system_user_token,
+                    activeProvider.meta_graph_version || "v21.0"
+                );
+            }
+
+            return res.status(200).json({ error: false, msg: 'WABA connected successfully via Meta Tech Provider' });
+        } catch (ownError) {
+            console.error("[OWN META WABA SUBMIT ERROR]", ownError);
+            return res.status(200).json({ error: ownError.message || 'Failed to connect WABA' });
+        }
+    }
+
+    // Default AiSensy Flow
+    const partnerId = activeProvider.aisensy_partner_id;
+    const apiKey = activeProvider.aisensy_api_key;
 
     const options = {
         method: 'POST',
-        url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/submit-facebook-access-token`,
+        url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/submit-facebook-access-token`,
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+            'X-AiSensy-Partner-API-Key': apiKey
         },
         data: { assistantId: project_id, wabaAppId: waba_id }
     };
 
     try {
         await axios.request(options);
+        await pool.query("UPDATE `aisensy_projects` SET `tech_provider` = 'aisensy' WHERE `project_id` = ?", [project_id]);
         return res.status(200).json({ error: false, msg: 'WABA connected successfully' });
     } catch (error) {
-        // Check if error response has a message field
         const errorMessage = error?.response?.data?.message || 'Failed to connect WABA';
         return res.status(200).json({ error: errorMessage });
     }
-
-
 });
 
 router.post("/waba-information", auth, async (req, res) => {
@@ -449,12 +525,16 @@ router.post("/meta-details", auth, async (req, res) => {
         };
 
         // Fetch project details from partner API
+        const activeProvider = await getActiveTechProvider();
+        const partnerId = activeProvider.aisensy_partner_id;
+        const apiKey = activeProvider.aisensy_api_key;
+
         const partnerOptions = {
             method: 'GET',
-            url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/project/${project_id}`,
+            url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/project/${project_id}`,
             headers: {
                 Accept: 'application/json',
-                'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+                'X-AiSensy-Partner-API-Key': apiKey
             }
         };
 
@@ -626,16 +706,20 @@ router.post("/create-project", auth, async (req, res) => {
         let business_password = GENERATE_PASSWORD(8);
 
 
+        const activeProvider = await getActiveTechProvider();
+        const partnerId = activeProvider.aisensy_partner_id;
+        const apiKey = activeProvider.aisensy_api_key;
+
         // BUSINESS CREATE
         if (business_row.length == 0) {
             try {
                 const options = {
                     method: 'POST',
-                    url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/business`,
+                    url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/business`,
                     headers: {
                         'Content-Type': 'application/json',
                         Accept: 'application/json',
-                        'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+                        'X-AiSensy-Partner-API-Key': apiKey
                     },
                     data: {
                         display_name: project_name,
@@ -700,11 +784,11 @@ router.post("/create-project", auth, async (req, res) => {
         try {
             const options = {
                 method: 'POST',
-                url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/business/${business_id}/project`,
+                url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/business/${business_id}/project`,
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
-                    'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+                    'X-AiSensy-Partner-API-Key': apiKey
                 },
                 data: { name: project_name }
             };
@@ -880,16 +964,20 @@ router.post("/edit-project", auth, async (req, res) => {
         let business_password = GENERATE_PASSWORD(8);
 
 
+        const activeProvider = await getActiveTechProvider();
+        const partnerId = activeProvider.aisensy_partner_id;
+        const apiKey = activeProvider.aisensy_api_key;
+
         // BUSINESS CREATE
         if (business_row.length == 0) {
             try {
                 const options = {
                     method: 'POST',
-                    url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/business`,
+                    url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/business`,
                     headers: {
                         'Content-Type': 'application/json',
                         Accept: 'application/json',
-                        'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+                        'X-AiSensy-Partner-API-Key': apiKey
                     },
                     data: {
                         display_name: project_name,
@@ -954,11 +1042,11 @@ router.post("/edit-project", auth, async (req, res) => {
         try {
             const options = {
                 method: 'POST',
-                url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/business/${business_id}/project`,
+                url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/business/${business_id}/project`,
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
-                    'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
+                    'X-AiSensy-Partner-API-Key': apiKey
                 },
                 data: { name: project_name }
             };

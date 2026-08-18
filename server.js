@@ -30,6 +30,7 @@ import developerSettingsRouter from "./routes/developer.js";
 import { generateSummary } from "./generate-db-summary.js";
 import subscriptionRouter from "./routes/subscription.js";
 import qrcodeRouter from "./routes/qrcode.js";
+import techProviderRouter from "./routes/techProvider.js";
 
 const app = express();
 
@@ -53,6 +54,8 @@ app.use(
         },
     })
 );
+
+app.use(express.static("public"));
 
 /**
  * B2 media proxy — clients use {BASE_DOMAIN}/proxy/chat|templates/...
@@ -144,6 +147,8 @@ app.use("/subscription", subscriptionRouter);
 app.use("/qrcode", qrcodeRouter);
 app.use("/admin/qrcode", qrcodeRouter);
 
+app.use("/admin/tech-provider", techProviderRouter);
+app.use("/tech-provider", techProviderRouter);
 app.use("/admin", adminRouter);
 app.use("/plan", planRouter);
 app.use("/developer", developerSettingsRouter);
@@ -235,6 +240,7 @@ if (process.env.GENERATE_DB_SUMMARY === "true") {
 const PORT = 6540;
 server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Server running on port ${PORT}`);
+
 
     if (isB2Enabled()) {
         try {

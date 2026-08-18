@@ -14,19 +14,17 @@ import {
     getDashboardSummary,
     updateProjectCharges
 } from '../helpers/adminDb.js';
-import { GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, FUTURE_TIMESTAMP } from '../helpers/function.js';
+import { GET_BALANCE_BY_USERNAME, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, FUTURE_TIMESTAMP, GetAiSensyProjectToken } from '../helpers/function.js';
 import subscriptionDb from '../helpers/subscriptionDb.js';
 import { Decrypt } from '../helpers/Decrypt.js';
 import pool from '../db.js';
 import axios from 'axios';
 import { sendOtpSms } from "../helpers/sms.js";
 import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
-import { GetAiSensyProjectToken } from '../helpers/function.js';
 import {
-    AISENSY_API_KEY,
-    AISENSY_PARTNER_ID,
     BASE_DOMAIN
 } from '../helpers/Config.js';
+import { getActiveTechProvider } from '../helpers/techProvider.js';
 import { ensureProjectWebhook } from '../helpers/SetWebhookSubscription.js';
 
 const router = express.Router();
@@ -812,87 +810,90 @@ router.get('/projects/:project_id/meta-details', async (req, res) => {
         }
 
         const res_data = {};
+        const activeProvider = await getActiveTechProvider();
 
-        const options2 = {
-            method: 'GET',
-            url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/project/${project_id}`,
-            headers: {
-                Accept: 'application/json',
-                'X-AiSensy-Partner-API-Key': AISENSY_API_KEY
-            }
-        };
-
-        try {
-            const { data } = await axios.request(options2);
-
-            const {
-                name,
-                status,
-                wa_number,
-                wa_messaging_tier,
-                wa_display_name_status,
-                fb_business_manager_status,
-                wa_display_name,
-                wa_quality_rating,
-                wa_about,
-                wa_display_image,
-                billing_currency,
-                timezone,
-                is_whatsapp_verified,
-                daily_template_limit,
-                wa_business_profile
-            } = data || {};
-
-            res_data.is_waba_connected = false;
-
-            res_data.project = {
-                error: false,
-                name,
-                status,
-                wa_messaging_tier,
-                wa_display_name_status,
-                fb_business_manager_status,
-                wa_display_name,
-                wa_quality_rating,
-                billing_currency,
-                timezone,
-                is_whatsapp_verified,
-                daily_template_limit
+        if (activeProvider.provider_type === "aisensy" && activeProvider.aisensy_partner_id && activeProvider.aisensy_api_key) {
+            const options2 = {
+                method: 'GET',
+                url: `https://apis.aisensy.com/partner-apis/v1/partner/${activeProvider.aisensy_partner_id}/project/${project_id}`,
+                headers: {
+                    Accept: 'application/json',
+                    'X-AiSensy-Partner-API-Key': activeProvider.aisensy_api_key
+                }
             };
 
-            if (wa_business_profile) {
-                res_data.is_waba_connected = true;
-                res_data.profile = {
-                    about: wa_about,
-                    description: wa_business_profile?.description,
-                    profile_picture_url: wa_display_image,
-                    email: wa_business_profile?.email,
-                    websites: wa_business_profile?.websites,
-                    vertical: wa_business_profile?.vertical,
-                    address: wa_business_profile?.address,
-                    wa_number
+            try {
+                const { data } = await axios.request(options2);
+
+                const {
+                    name,
+                    status,
+                    wa_number,
+                    wa_messaging_tier,
+                    wa_display_name_status,
+                    fb_business_manager_status,
+                    wa_display_name,
+                    wa_quality_rating,
+                    wa_about,
+                    wa_display_image,
+                    billing_currency,
+                    timezone,
+                    is_whatsapp_verified,
+                    daily_template_limit,
+                    wa_business_profile
+                } = data || {};
+
+                res_data.is_waba_connected = false;
+
+                res_data.project = {
+                    error: false,
+                    name,
+                    status,
+                    wa_messaging_tier,
+                    wa_display_name_status,
+                    fb_business_manager_status,
+                    wa_display_name,
+                    wa_quality_rating,
+                    billing_currency,
+                    timezone,
+                    is_whatsapp_verified,
+                    daily_template_limit
                 };
 
-                await pool.query(
-                    'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
-                    ['1', project_id]
-                );
+                if (wa_business_profile) {
+                    res_data.is_waba_connected = true;
+                    res_data.profile = {
+                        about: wa_about,
+                        description: wa_business_profile?.description,
+                        profile_picture_url: wa_display_image,
+                        email: wa_business_profile?.email,
+                        websites: wa_business_profile?.websites,
+                        vertical: wa_business_profile?.vertical,
+                        address: wa_business_profile?.address,
+                        wa_number
+                    };
 
-                await ensureProjectWebhook(project_id, {
-                    retries: 2,
-                    projectToken: project_token
-                });
-            } else {
-                await pool.query(
-                    'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
-                    ['0', project_id]
-                );
+                    await pool.query(
+                        'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
+                        ['1', project_id]
+                    );
+
+                    await ensureProjectWebhook(project_id, {
+                        retries: 2,
+                        projectToken: project_token
+                    });
+                } else {
+                    await pool.query(
+                        'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
+                        ['0', project_id]
+                    );
+                }
+            } catch (error) {
+                console.log(error);
+                res_data.project = {
+                    error: 'Error in fetching project details'
+                };
             }
-        } catch (error) {
-            console.log(error);
-            res_data.project = {
-                error: 'Error in fetching project details'
-            };
         }
 
         return res.status(200).json({

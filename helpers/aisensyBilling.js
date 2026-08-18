@@ -1,6 +1,6 @@
 import axios from "axios";
 import pool from "../db.js";
-import { AISENSY_API_KEY, AISENSY_PARTNER_ID } from "./Config.js";
+import { getActiveTechProvider } from "./techProvider.js";
 import { GET_ACTIVE_BILLING_PROJECT_IDS, TODAY_DATE } from "./function.js";
 import { ensureProjectWebhook } from "./SetWebhookSubscription.js";
 
@@ -10,28 +10,33 @@ const AISENSY_DEFAULT_PLAN = "BASIC_MONTHLY";
 const recentlyStopped = new Map(); // project_id -> timestamp
 const STOP_DEDUP_MS = 60 * 60 * 1000; // 1 hour
 
-function partnerHeaders() {
+function partnerHeaders(apiKey) {
     return {
         "Content-Type": "application/json",
         Accept: "application/json",
-        "X-AiSensy-Partner-API-Key": AISENSY_API_KEY,
+        "X-AiSensy-Partner-API-Key": apiKey,
     };
 }
 
 /**
  * Reactivate AiSensy project billing (realtime).
- * @returns {{ ok: boolean, error?: string }}
+ * @returns {{ ok: boolean, error?: string, skipped?: boolean }}
  */
 export async function reactivateProjectBilling(project_id) {
     if (!project_id) {
         return { ok: false, error: "Missing project_id" };
     }
 
+    const provider = await getActiveTechProvider();
+    if (provider.provider_type !== "aisensy" || !provider.aisensy_partner_id || !provider.aisensy_api_key) {
+        return { ok: true, skipped: true };
+    }
+
     try {
         await axios.request({
             method: "PATCH",
-            url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/project/${project_id}/billing/reactivate-project`,
-            headers: partnerHeaders(),
+            url: `https://apis.aisensy.com/partner-apis/v1/partner/${provider.aisensy_partner_id}/project/${project_id}/billing/reactivate-project`,
+            headers: partnerHeaders(provider.aisensy_api_key),
             data: {
                 familyId: AISENSY_BILLING_FAMILY_ID,
                 defaultPlan: AISENSY_DEFAULT_PLAN,
@@ -61,6 +66,11 @@ export async function stopProjectBilling(project_id, { force = false } = {}) {
         return { ok: false, error: "Missing project_id" };
     }
 
+    const provider = await getActiveTechProvider();
+    if (provider.provider_type !== "aisensy" || !provider.aisensy_partner_id || !provider.aisensy_api_key) {
+        return { ok: true, skipped: true };
+    }
+
     if (!force) {
         const last = recentlyStopped.get(project_id);
         if (last && Date.now() - last < STOP_DEDUP_MS) {
@@ -71,8 +81,8 @@ export async function stopProjectBilling(project_id, { force = false } = {}) {
     try {
         await axios.request({
             method: "PATCH",
-            url: `https://apis.aisensy.com/partner-apis/v1/partner/${AISENSY_PARTNER_ID}/stop-project-billing/${project_id}`,
-            headers: partnerHeaders(),
+            url: `https://apis.aisensy.com/partner-apis/v1/partner/${provider.aisensy_partner_id}/stop-project-billing/${project_id}`,
+            headers: partnerHeaders(provider.aisensy_api_key),
         });
         recentlyStopped.set(project_id, Date.now());
         return { ok: true };
