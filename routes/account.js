@@ -21,9 +21,26 @@ router.post("/send-otp", async (req, res) => {
     }
 
     const mobile = decrypt.mobile;
+    const purpose = decrypt.purpose;
 
     if (!mobile) {
         return res.status(200).json({ error: 'Mobile number is required' });
+    }
+
+    if (!purpose || !['login', 'signup'].includes(purpose)) {
+        return res.status(200).json({ error: 'Provide a valid purpose (login or signup)' });
+    }
+
+    // Check whether the user already exists, then branch on purpose
+    const [existing_user] = await pool.query("SELECT id FROM users WHERE mobile = ?", [mobile]);
+    const userExists = existing_user.length > 0;
+
+    if (purpose === 'login' && !userExists) {
+        return res.status(200).json({ error: 'User not registered. Please sign up.' });
+    }
+
+    if (purpose === 'signup' && userExists) {
+        return res.status(200).json({ error: 'Mobile number already registered' });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -34,7 +51,7 @@ router.post("/send-otp", async (req, res) => {
     try {
         await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')", [mobile, otp, expire_date]);
         await conn.commit();
-        
+
         try {
             await sendOtpWhatsApp(mobile, otp);
             await sendOtpSms(mobile, otp);
@@ -42,7 +59,7 @@ router.post("/send-otp", async (req, res) => {
             console.error("Failed to send OTP:", error);
             // Optionally, handle failure (e.g. continue or throw)
         }
-        
+
         return res.status(200).json({ error: false, msg: 'OTP sent successfully' });
     } catch (error) {
         await conn.rollback();
@@ -175,7 +192,7 @@ router.post("/register", async (req, res) => {
     try {
         var username = RANDOM_STRING(20);
         await pool.query("INSERT INTO `users`(`username`, `email`, `name`, `country_code`, `mobile`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`,`firm_name`) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [username, email, name, country_code, mobile, TIMESTAMP(), username, TIMESTAMP(), username, '1', firm_name]);
-        
+
         // Mark OTP as verified
         await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
 
@@ -403,140 +420,6 @@ router.post("/edit-profile", auth, async (req, res) => {
 
 
 });
-        const payload = ticket.getPayload();
-
-        const email = payload.email;
-
-        const [check_row] = await pool.query("SELECT * FROM users WHERE email = ? AND status = ?", [email, '1']);
-
-        if (check_row.length == 0) {
-            return res.status(200).json({ error: 'Account not found on the google account' });
-        }
-
-        const user_data = check_row[0];
-        const username = user_data?.username;
-        const login_token = RANDOM_STRING(50);
-        const name = user_data?.name;
-        const country_code = user_data?.country_code;
-        const mobile = user_data?.mobile;
-
-        await pool.query("INSERT INTO `login_token`(`username`, `create_date`, `create_by`, `modify_date`, `modify_by`, `token`, `expire_date`, `status`) VALUES (?,?,?,?,?,?,?,?)", [username, TIMESTAMP(), username, TIMESTAMP(), username, login_token, FUTURE_TIMESTAMP(43200), '1']);
-
-        const [project_row] = await pool.query("SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = ? AND aisensy_projects.status = ?", [username, '0', '1']);
-
-        const projects = [];
-
-        if (project_row.length > 0) {
-            project_row.forEach(element => {
-                var project_object = {
-                name: element.project_name,
-                project_id: element.project_id,
-                owned: element.type == 'admin' ? true : false,
-                profile_picture: element.profile_picture || "",
-                profile_image: element.profile_picture || "",
-                logo: element.profile_picture || "",
-                image: element.profile_picture || "",
-            }
-
-                projects.push(project_object);
-            });
-        }
-
-        const project_count = projects.length;
-
-
-        return res.status(200).json(
-            {
-                error: false,
-                username,
-                token: login_token,
-                profile: {
-                    name,
-                    country_code,
-                    mobile,
-                    email,
-                },
-                project_count,
-                projects: projects
-            }
-        );
-
-    } catch (error) {
-        return res.status(200).json({
-            error: 'Google authentication failed',
-            e: error
-        });
-    }
-});
-        const payload = ticket.getPayload();
-
-        const email = payload.email;
-        const name = payload.name;
-
-        const [check_row] = await pool.query("SELECT * FROM users WHERE email = ?", [email]);
-
-        if (check_row.length > 0) {
-            return res.status(200).json({ error: 'User already registered. Please signin with google' });
-        }
-
-
-        var username = RANDOM_STRING(20);
-        await pool.query("INSERT INTO `users`(`username`, `email`, `name`, `create_date`, `create_by`, `modify_date`, `modify_by`, `status`) VALUES (?,?,?,?,?,?,?,?)", [username, email, name, TIMESTAMP(), username, TIMESTAMP(), username, '1']);
-
-
-        const login_token = RANDOM_STRING(50);
-
-        await pool.query("INSERT INTO `login_token`(`username`, `create_date`, `create_by`, `modify_date`, `modify_by`, `token`, `expire_date`, `status`) VALUES (?,?,?,?,?,?,?,?)", [username, TIMESTAMP(), username, TIMESTAMP(), username, login_token, FUTURE_TIMESTAMP(43200), '1']);
-
-
-        const [project_row] = await pool.query("SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = ? AND aisensy_projects.status = ?", [username, '0', '1']);
-
-        await conn.commit();
-
-        const projects = [];
-
-        if (project_row.length > 0) {
-            project_row.forEach(element => {
-                var project_object = {
-                name: element.project_name,
-                project_id: element.project_id,
-                owned: element.type == 'admin' ? true : false,
-                profile_picture: element.profile_picture || "",
-                profile_image: element.profile_picture || "",
-                logo: element.profile_picture || "",
-                image: element.profile_picture || "",
-            }
-
-                projects.push(project_object);
-            });
-        }
-
-        const project_count = projects.length;
-
-        return res.status(200).json(
-            {
-                error: false,
-                username,
-                token: login_token,
-                profile: {
-                    name,
-                    country_code: null,
-                    mobile: null,
-                    email,
-                },
-                project_count,
-                projects: projects
-            }
-        );
-
-    } catch (error) {
-        await conn.rollback();
-        return res.status(200).json({
-            error: 'Google authentication failed',
-            e: error
-        });
-    }
-});
 
 router.post("/session-check", auth, async (req, res) => {
 
@@ -642,4 +525,3 @@ router.get("/ai-bills", auth, async (req, res) => {
 });
 
 export default router
-
