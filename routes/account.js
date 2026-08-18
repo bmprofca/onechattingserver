@@ -1,11 +1,9 @@
-import express from "express";
+﻿import express from "express";
 const router = express.Router();
 import pool from "../db.js";
-import { FUTURE_TIMESTAMP, GENERATE_PASSWORD, GET_BALANCE_BY_USERNAME, IS_STRONG_PASSWORD, RANDOM_STRING, TIMESTAMP, USER_DATA, validateTurnstileToken } from "../helpers/function.js";
+import { FUTURE_TIMESTAMP, GENERATE_PASSWORD, GET_BALANCE_BY_USERNAME, IS_STRONG_PASSWORD, RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 import { auth } from "../middleware/auth.js";
-import { GOOGLE_CLIENT_ID } from "../helpers/Config.js";
-import { OAuth2Client } from "google-auth-library";
 import { sendPasswordResetEmail } from "../helpers/email.js";
 import { sendOtpSms } from "../helpers/sms.js";
 import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
@@ -405,25 +403,6 @@ router.post("/edit-profile", auth, async (req, res) => {
 
 
 });
-
-router.post('/google-login', async (req, res) => {
-
-    if (req.body && Object.keys(req.body).length > 0) {
-        var data = req.body?.data || '';
-        var key = req.body?.key || '';
-    }
-
-    const decrypt = Decrypt(data, key);
-    const google_token = decrypt.google_token;
-
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
-
-    try {
-        const ticket = await client.verifyIdToken({
-            idToken: google_token,
-            audience: GOOGLE_CLIENT_ID
-        });
-
         const payload = ticket.getPayload();
 
         const email = payload.email;
@@ -489,28 +468,6 @@ router.post('/google-login', async (req, res) => {
         });
     }
 });
-
-router.post('/google-register', async (req, res) => {
-
-    if (req.body && Object.keys(req.body).length > 0) {
-        var data = req.body?.data || '';
-        var key = req.body?.key || '';
-    }
-
-    const decrypt = Decrypt(data, key);
-    const google_token = decrypt.google_token;
-
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
-
-
-    const conn = await pool.getConnection();
-
-    try {
-        const ticket = await client.verifyIdToken({
-            idToken: google_token,
-            audience: GOOGLE_CLIENT_ID
-        });
-
         const payload = ticket.getPayload();
 
         const email = payload.email;
@@ -685,3 +642,4 @@ router.get("/ai-bills", auth, async (req, res) => {
 });
 
 export default router
+
