@@ -38,10 +38,16 @@ router.post("/chat-list", auth, async (req, res) => {
 
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt.project_id;
-    var page_no = Number(decrypt.page_no || 1);
+
+    // NOTE: frontend sends `page`, not `page_no` — accept both so pagination
+    // actually works instead of silently defaulting to page 1 every time.
+    var page_no = Number(decrypt.page_no || decrypt.page || 1);
     var search = decrypt.search || '';
 
-    // console.log("search = > ",search);
+    // NOTE: frontend sends the active tab under `filter`, `filter_type`, AND
+    // `type` (all the same value) — read whichever is present.
+    var filter = decrypt.filter || decrypt.filter_type || decrypt.type || 'all';
+
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' })
@@ -57,11 +63,44 @@ router.post("/chat-list", auth, async (req, res) => {
         const searchPattern = `%${search}%`;
         queryArgs.push(searchPattern, searchPattern);
     }
-    
+
+    // Build the HAVING clause for filters that depend on computed/aggregated
+    // columns (unread_count, is_favorite). These can't go in WHERE because
+    // they're derived after the GROUP BY.
+    let havingCondition = "";
+    if (filter === 'unread') {
+        havingCondition = " HAVING unread_count > 0 ";
+    } else if (filter === 'favourites') {
+        havingCondition = " HAVING is_favorite = 'yes' ";
+    } else if (filter === 'assigned') {
+        // TODO: "assigned" needs a real assignment source — there's no
+        // assigned-agent column in this query yet. Once you have one
+        // (e.g. a `contacts.assigned_to` column or a separate
+        // `chat_assignments` table), wire it in here, e.g.:
+        //   havingCondition = " HAVING assigned_to = ? ";
+        //   queryArgs.push(username); // add BEFORE offset/limit below
+        // Left as a no-op filter for now so it doesn't silently 500.
+        havingCondition = "";
+    }
+
     queryArgs.push(offset, limit);
 
-    var [rows] = await pool.query("SELECT m.*, contacts.name, CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, (SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count FROM messages m INNER JOIN (SELECT project_id, number, MAX(id) AS last_id FROM messages GROUP BY project_id, number) AS last_msg ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id LEFT JOIN contacts ON contacts.number = m.number AND contacts.project_id = m.project_id AND contacts.is_deleted = '0' LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' WHERE m.project_id = ? " + searchCondition + " GROUP BY m.id, contacts.name ORDER BY last_msg.last_id DESC LIMIT ?, ?", queryArgs);
-
+    var [rows] = await pool.query(
+        "SELECT m.*, contacts.name, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
+        "(SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, " +
+        "COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count " +
+        "FROM messages m " +
+        "INNER JOIN (SELECT project_id, number, MAX(id) AS last_id FROM messages GROUP BY project_id, number) AS last_msg " +
+        "ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id " +
+        "LEFT JOIN contacts ON contacts.number = m.number AND contacts.project_id = m.project_id AND contacts.is_deleted = '0' " +
+        "LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' " +
+        "WHERE m.project_id = ? " + searchCondition +
+        " GROUP BY m.id, contacts.name " +
+        havingCondition +
+        " ORDER BY last_msg.last_id DESC LIMIT ?, ?",
+        queryArgs
+    );
 
     const res_data = [];
 
@@ -102,18 +141,13 @@ router.post("/chat-list", auth, async (req, res) => {
                 unread_count
             };
 
-
-
             if (status == 'failed') {
                 object.failed_reason = failed_reason;
             }
 
             res_data.push(object);
-
         });
-
     }
-
 
     return res.status(200).json({
         data: res_data,
