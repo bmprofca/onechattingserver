@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import pool from "../db.js";
 import { auth, CheckProjectValidity, CheckUserProjectMaping } from "../middleware/auth.js";
 import { AISENSY_PROJECT_DATA, GET_BALANCE, GetAiSensyProjectToken, GET_CHAT_MEDIA_KEY_PREFIX, GET_CHAT_MEDIA_URL, MOVE_MEDIA, RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, auditUserRecord } from "../helpers/function.js";
@@ -39,13 +39,13 @@ router.post("/chat-list", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt.project_id;
 
-    // NOTE: frontend sends `page`, not `page_no` — accept both so pagination
+    // NOTE: frontend sends `page`, not `page_no` â€” accept both so pagination
     // actually works instead of silently defaulting to page 1 every time.
     var page_no = Number(decrypt.page_no || decrypt.page || 1);
     var search = decrypt.search || '';
 
     // NOTE: frontend sends the active tab under `filter`, `filter_type`, AND
-    // `type` (all the same value) — read whichever is present.
+    // `type` (all the same value) â€” read whichever is present.
     var filter = decrypt.filter || decrypt.filter_type || decrypt.type || 'all';
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -73,7 +73,7 @@ router.post("/chat-list", auth, async (req, res) => {
     } else if (filter === 'favourites') {
         havingCondition = " HAVING is_favorite = 'yes' ";
     } else if (filter === 'assigned') {
-        // TODO: "assigned" needs a real assignment source — there's no
+        // TODO: "assigned" needs a real assignment source â€” there's no
         // assigned-agent column in this query yet. Once you have one
         // (e.g. a `contacts.assigned_to` column or a separate
         // `chat_assignments` table), wire it in here, e.g.:
@@ -2362,6 +2362,76 @@ router.post("/case-edit", auth, async (req, res) => {
     }
 });
 
+router.post("/case-bulk-close", auth, async (req, res) => {
+    try {
+        let data = '';
+        let key = '';
+        if (req.body && Object.keys(req.body).length > 0) {
+            data = req.body?.data || '';
+            key = req.body?.key || '';
+        }
+
+        const decrypt = Decrypt(data, key);
+        if (!decrypt) {
+            return res.status(200).json({ error: 'Failed to decrypt data' });
+        }
+
+        const username = (req?.headers["username"] || '').toString().trim();
+        const project_id = (decrypt?.project_id ?? '').toString().trim();
+        const case_ids = decrypt?.case_ids;
+
+        if (!project_id) {
+            return res.status(200).json({ error: 'Provide all mandatory fields: project_id' });
+        }
+        if (!Array.isArray(case_ids) || case_ids.length === 0) {
+            return res.status(200).json({ error: 'Provide at least one case_id in case_ids array' });
+        }
+
+        const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+        if (!check_project_mapping) {
+            return res.status(200).json({ error: 'User is not assigned on the project' });
+        }
+
+        const sanitizedIds = case_ids.map(id => String(id).trim()).filter(Boolean);
+        if (sanitizedIds.length === 0) {
+            return res.status(200).json({ error: 'No valid case_ids provided' });
+        }
+
+        const placeholders = sanitizedIds.map(() => '?').join(',');
+        await pool.query(
+            "UPDATE cases SET modify_date = ?, modify_by = ?, status = '1' WHERE project_id = ? AND case_id IN (" + placeholders + ")",
+            [TIMESTAMP(), username, project_id, ...sanitizedIds]
+        );
+
+        // Fetch distinct numbers for socket events
+        const [affectedRows] = await pool.query(
+            "SELECT DISTINCT number FROM cases WHERE project_id = ? AND case_id IN (" + placeholders + ")",
+            [project_id, ...sanitizedIds]
+        );
+
+        const [room_row] = await pool.query("SELECT * FROM \project_mapping\ WHERE project_id = ? AND is_deleted = ?", [project_id, '0']);
+        for (const affectedRow of affectedRows) {
+            const caseNumber = affectedRow.number;
+            const [case_open_count_row] = await pool.query("SELECT COUNT(*) AS case_open_count FROM cases WHERE project_id = ? AND number = ? AND status = '0'", [project_id, caseNumber]);
+            const case_open_count = case_open_count_row[0]?.case_open_count || 0;
+            if (room_row.length > 0) {
+                for (const roomObj of room_row) {
+                    const room = roomObj?.username;
+                    WsIo.to(room).emit("case_status", { number: caseNumber, case_open_count });
+                }
+            }
+        }
+
+        return res.status(200).json({
+            error: false,
+            closed_count: sanitizedIds.length,
+            msg: "Cases closed successfully"
+        });
+    } catch (error) {
+        return res.status(200).json({ error: 'Failed to bulk close cases' });
+    }
+});
+
 router.post("/open-case-list", auth, async (req, res) => {
     try {
         let data = '';
@@ -2556,3 +2626,4 @@ router.post("/open-case-list", auth, async (req, res) => {
 });
 
 export default router;
+

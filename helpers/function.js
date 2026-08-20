@@ -2,7 +2,6 @@ import axios from "axios";
 import pool from "../db.js";
 import { fileTypeFromBuffer } from "file-type";
 import { TURNSTILE_SECRET_KEY } from "./Config.js";
-import fs from "fs";
 import path from "path";
 import {
     getChatMediaKeyPrefix,

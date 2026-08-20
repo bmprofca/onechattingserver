@@ -1,7 +1,7 @@
 import express from "express";
 const router = express.Router();
 import pool from "../db.js";
-import { AISENSY_PROJECT_DATA, GENERATE_EMAIL_ADDRESS, GENERATE_PASSWORD, GET_ADMIN_OF_PROJECT, GET_BALANCE, GET_BALANCE_BY_USERNAME, GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP, TODAY_DATE, USER_DATA } from "../helpers/function.js";
+import { AISENSY_PROJECT_DATA, GENERATE_EMAIL_ADDRESS, GENERATE_PASSWORD, GET_ADMIN_OF_PROJECT, GET_BALANCE_BY_USERNAME, GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP, TODAY_DATE, USER_DATA } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 import { auth } from "../middleware/auth.js";
 import axios from "axios";
@@ -10,23 +10,37 @@ import { activateProjectServices } from "../helpers/aisensyBilling.js";
 import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 import { getActiveTechProvider, subscribeMetaWabaWebhook, exchangeMetaEmbeddedSignupCode } from "../helpers/techProvider.js";
 
+// ---------------------------------------------------------------------
+// Returns which Meta Tech Provider is currently active
+// (system_tech_providers.is_active = '1') so the frontend can configure
+// FB.init / FB.login correctly.
+//
+// IMPORTANT: everything returned here comes straight from the DB row -
+// there are NO hardcoded app_id / config_id / graph_version / solution_id
+// anywhere in the code. Whichever row is is_active = '1' in
+// system_tech_providers is the single source of truth, for BOTH
+// provider_type = 'own' and provider_type = 'aisensy'.
+// ---------------------------------------------------------------------
 router.get("/embedded-signup-config", auth, async (req, res) => {
     try {
         const active = await getActiveTechProvider();
-        if (active.provider_type === "own") {
-            return res.status(200).json({
-                error: false,
-                provider: "own",
-                meta_app_id: active.meta_app_id || "",
-                meta_config_id: active.meta_config_id || "",
-                meta_graph_version: active.meta_graph_version || "v21.0"
-            });
+
+        if (!active) {
+            return res.status(200).json({ error: "No active Meta Tech Provider configured" });
         }
+
         return res.status(200).json({
             error: false,
-            provider: "aisensy"
+            provider: active.provider_type, // 'own' | 'aisensy'
+            meta_app_id: active.meta_app_id || "",
+            meta_config_id: active.meta_config_id || "",
+            meta_graph_version: active.meta_graph_version || "v21.0",
+            // Only relevant for the 'aisensy' partner flow, but harmless to
+            // always include - the frontend only uses it when provider is 'aisensy'.
+            solution_id: active.aisensy_solution_id || ""
         });
     } catch (err) {
+        console.error("[embedded-signup-config] error", err);
         return res.status(500).json({ error: "Failed to fetch embedded signup config" });
     }
 });
@@ -131,7 +145,7 @@ router.post("/submit-waba-id", auth, async (req, res) => {
     const code = decrypt?.code;
     const phone_number_id = decrypt?.phone_number_id;
 
-    if (!project_id || (!waba_id && !code)) {
+    if (!project_id) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
     }
 
@@ -142,19 +156,28 @@ router.post("/submit-waba-id", auth, async (req, res) => {
         return res.status(200).json({ error: 'Unauthorized Access' })
     }
 
+    // Determine which Meta Tech Provider is active BEFORE validating the
+    // provider-specific required fields below, since the two flows need
+    // different data: 'own' needs the authorization `code` to exchange for a
+    // token via the Graph API; 'aisensy' needs the `waba_id` to link the
+    // account through AiSensy's partner API.
     const activeProvider = await getActiveTechProvider();
 
-    // If using Own Meta Tech Provider
+    // ---------------------------------------------------------------
+    // OWN Meta Tech Provider flow
+    // ---------------------------------------------------------------
     if (activeProvider.provider_type === "own") {
+        if (!code) {
+            return res.status(200).json({ error: 'Authorization code missing. Please retry the WhatsApp signup.' });
+        }
+
         try {
-            if (code) {
-                await exchangeMetaEmbeddedSignupCode(
-                    code,
-                    activeProvider.meta_app_id,
-                    activeProvider.meta_app_secret,
-                    activeProvider.meta_graph_version || "v21.0"
-                );
-            }
+            await exchangeMetaEmbeddedSignupCode(
+                code,
+                activeProvider.meta_app_id,
+                activeProvider.meta_app_secret,
+                activeProvider.meta_graph_version || "v21.0"
+            );
 
             // Update project tech provider & WABA status
             await pool.query(
@@ -162,7 +185,7 @@ router.post("/submit-waba-id", auth, async (req, res) => {
                 [waba_id || null, phone_number_id || null, project_id]
             );
 
-            // Subscribe WABA to webhook if system token is configured
+            // Subscribe WABA to webhook if we have both a WABA ID and a system user token
             if (waba_id && activeProvider.meta_system_user_token) {
                 await subscribeMetaWabaWebhook(
                     waba_id,
@@ -178,7 +201,13 @@ router.post("/submit-waba-id", auth, async (req, res) => {
         }
     }
 
-    // Default AiSensy Flow
+    // ---------------------------------------------------------------
+    // Default: AiSensy Partner flow
+    // ---------------------------------------------------------------
+    if (!waba_id) {
+        return res.status(200).json({ error: 'WABA ID missing. Please retry the WhatsApp signup.' });
+    }
+
     const partnerId = activeProvider.aisensy_partner_id;
     const apiKey = activeProvider.aisensy_api_key;
 
