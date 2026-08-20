@@ -6,8 +6,11 @@ import { auth } from "../middleware/auth.js";
 import { sendOtpSms } from "../helpers/sms.js";
 import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
 import { getAdminByToken } from "../helpers/adminDb.js";
+import crypto from "crypto";
 
 const router = express.Router();
+
+const generateNumericQrId = () => crypto.randomInt(1000000000, 9999999999).toString();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN AUTH MIDDLEWARE
@@ -46,12 +49,31 @@ const authAdmin = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/admin/all", authAdmin, async (req, res) => {
     try {
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+        const offset = (page - 1) * limit;
+        const search = String(req.query.search || '').trim();
+        const mappingStatus = String(req.query.mapping_status || 'all').toLowerCase();
+        const where = [];
+        const params = [];
+        if (search) {
+            where.push('(q.qr_id LIKE ? OR q.project_id LIKE ? OR p.project_name LIKE ?)');
+            const term = `%${search}%`;
+            params.push(term, term, term);
+        }
+        if (mappingStatus === 'mapped') where.push('q.project_id IS NOT NULL');
+        if (mappingStatus === 'unmapped') where.push('q.project_id IS NULL');
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+        const [[countRow]] = await pool.query(`
+            SELECT COUNT(*) AS total
+            FROM project_qr_codes q
+            LEFT JOIN aisensy_projects p ON p.project_id = q.project_id
+            ${whereSql}`, params);
         const [rows] = await pool.query(`
             SELECT 
                 q.id,
                 q.qr_id,
                 q.project_id,
-                q.label,
                 q.status,
                 q.scan_count,
                 q.created_by,
@@ -62,20 +84,30 @@ router.get("/admin/all", authAdmin, async (req, res) => {
                 p.wa_number
             FROM project_qr_codes q
             LEFT JOIN aisensy_projects p ON p.project_id = q.project_id
+            ${whereSql}
             ORDER BY q.create_date DESC
-        `);
+            LIMIT ? OFFSET ?`, [...params, limit, offset]);
 
-        // Only fetch projects that have a valid wa_number for the create-dropdown
-        // Projects without wa_number cannot receive incoming WhatsApp messages,
-        // so QR codes for them would not work end-to-end
+        // Mapping is intentionally one-to-one: only projects without an active QR
+        // are offered to the administrator.
         const [projects] = await pool.query(
+            `SELECT p.project_id, p.project_name, p.profile_picture, p.wa_number
+             FROM aisensy_projects p
+             LEFT JOIN project_qr_codes q ON q.project_id = p.project_id AND q.status = '1'
+             WHERE p.status = '1' AND p.wa_number IS NOT NULL AND p.wa_number != '' AND q.id IS NULL
+             ORDER BY p.project_name ASC`
+        );
+        const [allProjects] = await pool.query(
             "SELECT project_id, project_name, profile_picture, wa_number FROM aisensy_projects WHERE status = '1' AND wa_number IS NOT NULL AND wa_number != '' ORDER BY project_name ASC"
         );
 
         return res.status(200).json({
             error: false,
             qr_codes: rows,
-            projects: projects
+            projects,
+            all_projects: allProjects,
+            pagination: { page, limit, total: Number(countRow.total) || 0, total_pages: Math.max(1, Math.ceil(Number(countRow.total || 0) / limit)) },
+            filters: { search, mapping_status: mappingStatus }
         });
     } catch (error) {
         console.error("Admin QR list all error:", error);
@@ -88,55 +120,103 @@ router.get("/admin/all", authAdmin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/admin/generate", authAdmin, async (req, res) => {
     try {
-        const { project_id, label } = req.body;
-
-        if (!project_id) {
-            return res.status(400).json({ error: "project_id is required" });
-        }
-
-        // Verify project exists and has a valid wa_number
-        const [projectRows] = await pool.query(
-            "SELECT project_id, project_name, profile_picture, wa_number FROM aisensy_projects WHERE project_id = ? AND status = '1'",
-            [project_id]
-        );
-
-        if (projectRows.length === 0) {
-            return res.status(404).json({ error: "Project not found or inactive" });
-        }
-
-        const project = projectRows[0];
-
-        // Block QR generation if project has no WABA number
-        if (!project.wa_number || project.wa_number.trim() === '') {
-            return res.status(400).json({ 
-                error: "This project does not have a WhatsApp Business number (WABA) configured. Please connect a WABA number to this project before generating a QR code." 
-            });
-        }
-
-        const qr_id = RANDOM_STRING(20);
+        const count = Math.min(500, Math.max(1, Number.parseInt(req.body?.count, 10) || 0));
+        if (!count) return res.status(400).json({ error: "count must be between 1 and 500" });
+        const qrIds = new Set();
+        while (qrIds.size < count) qrIds.add(generateNumericQrId());
+        const candidates = [...qrIds];
+        const placeholders = candidates.map(() => '?').join(',');
+        const [existing] = await pool.query(`SELECT qr_id FROM project_qr_codes WHERE qr_id IN (${placeholders})`, candidates);
+        const existingIds = new Set(existing.map((row) => row.qr_id));
+        const uniqueIds = candidates.filter((id) => !existingIds.has(id));
+        if (uniqueIds.length !== count) return res.status(409).json({ error: "QR collision detected; please retry" });
         const created_by = req.admin.username || "admin";
-
-        await pool.query(
-            "INSERT INTO project_qr_codes (qr_id, project_id, label, created_by, create_date) VALUES (?, ?, ?, ?, ?)",
-            [qr_id, project_id, label || null, created_by, TIMESTAMP()]
-        );
+        const now = TIMESTAMP();
+        const values = uniqueIds.flatMap((qrId) => [qrId, created_by, now]);
+        const valueSql = uniqueIds.map(() => "(?, NULL, ?, '1', ?)").join(',');
+        await pool.query(`INSERT INTO project_qr_codes (qr_id, project_id, created_by, status, create_date) VALUES ${valueSql}`, values);
 
         return res.status(200).json({
             error: false,
-            msg: "QR code generated successfully",
-            qr_code: {
-                qr_id,
-                project_id,
-                project_name: project.project_name,
-                label: label || null,
-                status: "1",
-                scan_count: 0,
-                create_date: TIMESTAMP(),
-            },
+            msg: `${count} QR code${count === 1 ? '' : 's'} generated successfully`,
+            qr_codes: uniqueIds.map((qr_id) => ({ qr_id, project_id: null, status: '1', scan_count: 0, create_date: now })),
         });
     } catch (error) {
         console.error("QR generate error:", error);
         return res.status(500).json({ error: "Failed to generate QR code" });
+    }
+});
+
+// POST /qrcode/admin/update — Edit QR label/status or map/unmap its project
+router.post("/admin/update", authAdmin, async (req, res) => {
+    try {
+        const { qr_id, project_id, status } = req.body;
+        if (!qr_id) return res.status(400).json({ error: "qr_id is required" });
+        if (status !== undefined && !["0", "1"].includes(String(status))) {
+            return res.status(400).json({ error: "status must be 0 or 1" });
+        }
+        const [qrRows] = await pool.query("SELECT id FROM project_qr_codes WHERE qr_id = ?", [qr_id]);
+        if (!qrRows.length) return res.status(404).json({ error: "QR code not found" });
+        const [currentRows] = await pool.query("SELECT project_id, status FROM project_qr_codes WHERE qr_id = ?", [qr_id]);
+        const current = currentRows[0];
+
+        if (project_id !== undefined && project_id !== null && project_id !== "") {
+            const [projectRows] = await pool.query(
+                "SELECT project_id FROM aisensy_projects WHERE project_id = ? AND status = '1' AND wa_number IS NOT NULL AND wa_number != ''",
+                [project_id]
+            );
+            if (!projectRows.length) return res.status(404).json({ error: "Project not found or has no WhatsApp number" });
+            const [mappedRows] = await pool.query(
+                "SELECT qr_id FROM project_qr_codes WHERE project_id = ? AND status = '1' AND qr_id <> ?",
+                [project_id, qr_id]
+            );
+            if (mappedRows.length) return res.status(409).json({ error: "Project is already mapped to another active QR code" });
+        }
+
+        await pool.query(
+            `UPDATE project_qr_codes SET project_id = ?, status = COALESCE(?, status), modify_date = ? WHERE qr_id = ?`,
+            [project_id === undefined ? current.project_id : (project_id || null), status === undefined ? null : String(status), TIMESTAMP(), qr_id]
+        );
+        return res.status(200).json({ error: false, msg: "QR code updated successfully" });
+    } catch (error) {
+        console.error("QR update error:", error);
+        return res.status(500).json({ error: "Failed to update QR code" });
+    }
+});
+
+// POST /qrcode/admin/map — Map one generated QR to one currently unmapped project
+router.post("/admin/map", authAdmin, async (req, res) => {
+    try {
+        const { qr_id, project_id } = req.body;
+        if (!qr_id || !project_id) return res.status(400).json({ error: "qr_id and project_id are required" });
+
+        const [qrRows] = await pool.query(
+            "SELECT qr_id, project_id, status FROM project_qr_codes WHERE qr_id = ?",
+            [qr_id]
+        );
+        if (!qrRows.length) return res.status(404).json({ error: "QR code not found" });
+        if (qrRows[0].project_id) return res.status(409).json({ error: "QR code is already mapped" });
+
+        const [projectRows] = await pool.query(
+            "SELECT project_id FROM aisensy_projects WHERE project_id = ? AND status = '1' AND wa_number IS NOT NULL AND wa_number != ''",
+            [project_id]
+        );
+        if (!projectRows.length) return res.status(404).json({ error: "Project is not active or has no WhatsApp number" });
+
+        const [mappedRows] = await pool.query(
+            "SELECT qr_id FROM project_qr_codes WHERE project_id = ? AND status = '1' LIMIT 1",
+            [project_id]
+        );
+        if (mappedRows.length) return res.status(409).json({ error: "Project is already mapped to a QR code" });
+
+        await pool.query(
+            "UPDATE project_qr_codes SET project_id = ?, modify_date = ? WHERE qr_id = ? AND project_id IS NULL",
+            [project_id, TIMESTAMP(), qr_id]
+        );
+        return res.status(200).json({ error: false, msg: "QR code mapped to project successfully" });
+    } catch (error) {
+        console.error("QR map error:", error);
+        return res.status(500).json({ error: "Failed to map QR code" });
     }
 });
 
@@ -148,7 +228,7 @@ router.get("/admin/list/:project_id", authAdmin, async (req, res) => {
         const { project_id } = req.params;
 
         const [rows] = await pool.query(
-            "SELECT qr_id, project_id, label, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? ORDER BY create_date DESC",
+            "SELECT qr_id, project_id, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? ORDER BY create_date DESC",
             [project_id]
         );
 
@@ -260,7 +340,7 @@ router.post("/list", auth, async (req, res) => {
         }
 
         const [rows] = await pool.query(
-            "SELECT qr_id, project_id, label, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? AND status = '1' ORDER BY create_date DESC",
+            "SELECT qr_id, project_id, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? AND status = '1' ORDER BY create_date DESC",
             [project_id]
         );
 
@@ -288,7 +368,7 @@ router.get("/validate/:qr_id", async (req, res) => {
         }
 
         const [qrRows] = await pool.query(
-            "SELECT qr_id, project_id, label, status FROM project_qr_codes WHERE qr_id = ?",
+            "SELECT qr_id, project_id, status FROM project_qr_codes WHERE qr_id = ?",
             [qr_id]
         );
 
@@ -328,9 +408,7 @@ router.get("/validate/:qr_id", async (req, res) => {
         const cleanWaNumber = project.wa_number.replace(/\D/g, "");
 
         // Construct default message containing the project ID and QR reference
-        const messageText = qrCode.label
-            ? `${qrCode.label} (Project ID: ${project.project_id}) [Ref: ${qrCode.qr_id}]`
-            : `Hello! I'd like to connect. (Project ID: ${project.project_id}) [Ref: ${qrCode.qr_id}]`;
+        const messageText = `Hello! I'd like to connect. (Project ID: ${project.project_id}) [Ref: ${qrCode.qr_id}]`;
 
         return res.status(200).json({
             error: false,
@@ -342,7 +420,6 @@ router.get("/validate/:qr_id", async (req, res) => {
             },
             phone_number: cleanWaNumber,
             custom_message: messageText,
-            qr_label: qrCode.label || "",
         });
     } catch (error) {
         console.error("QR validate error:", error);
@@ -404,6 +481,11 @@ router.post("/scan-action", async (req, res) => {
 
             if (tokenRows.length === 1 && tokenRows[0].user_status === "1") {
                 // Valid session — check/create mapping
+                // Resolve identity from the verified token so the public scan
+                // page does not need to expose the user's profile fields.
+                const sessionMobile = mobile || tokenRows[0].mobile;
+                const sessionName = name || tokenRows[0].name;
+                const sessionEmail = email || tokenRows[0].email;
                 const result = await ensureProjectMapping(username, project_id);
 
                 if (result.error) {
@@ -559,7 +641,7 @@ router.post("/scan-action", async (req, res) => {
             try {
                 const [existingScanned] = await pool.query(
                     "SELECT id FROM qr_scanned_users WHERE project_id = ? AND mobile = ? AND status = '1'",
-                    [project_id, mobile]
+                    [project_id, sessionMobile]
                 );
                 if (existingScanned.length === 0) {
                     const scan_id = RANDOM_STRING(20);
@@ -571,9 +653,9 @@ router.post("/scan-action", async (req, res) => {
                             scan_id,
                             project_id,
                             qr_id,
-                            profile.name || name || "Scanned User",
-                            mobile,
-                            profile.email || email || null,
+                            profile.name || sessionName || "Scanned User",
+                            sessionMobile,
+                            profile.email || sessionEmail || null,
                             profile.firm_name || firm_name || null,
                             user_username,
                             TIMESTAMP()
@@ -709,7 +791,7 @@ router.post("/scanned-users/list", auth, async (req, res) => {
         );
         const total = countResult[0]?.total || 0;
 
-        // Fetch records with QR code label joined
+        // Fetch records with QR source joined
         const listParams = [...queryParams, limit, offset];
         const [rows] = await pool.query(
             `SELECT 
@@ -730,7 +812,7 @@ router.post("/scanned-users/list", auth, async (req, res) => {
                 u.status,
                 u.create_date,
                 u.modify_date,
-                q.label AS qr_label
+                q.qr_id AS qr_source
             FROM qr_scanned_users u
             LEFT JOIN project_qr_codes q ON q.qr_id = u.qr_id
             ${whereClause}
