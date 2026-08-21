@@ -18,6 +18,7 @@ import {
     parseMessageComponent,
 } from "../helpers/templateStorage.js";
 import { handleAutoReply } from "../helpers/autoReplyAgent.js";
+import { handleFlowBuilder } from "../helpers/flowBuilder.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -724,9 +725,23 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         case_open_count,
                     });
 
-                    // Trigger auto-reply for incoming text messages
-                    if (type === 'in' && message_type === 'text' && !is_forwarded) {
-                        await handleAutoReply(project_id, number, message_msg, unique_id);
+                    // Flow Builder handles all supported incoming messages first.
+                    // Auto Reply remains the fallback when no active flow handles it.
+                    if (type === 'in' && !is_forwarded) {
+                        let rawMessage = {};
+                        try { rawMessage = typeof element.raw_json === "string" ? JSON.parse(element.raw_json) : (element.raw_json || {}); } catch { rawMessage = {}; }
+                        const interactiveReply = rawMessage?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.list_reply
+                            || rawMessage?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply
+                            || null;
+                        const flowHandled = await handleFlowBuilder(project_id, number, {
+                            text: message_msg || '',
+                            message_type,
+                            interaction_id: interactiveReply?.id || null,
+                            interaction_title: interactiveReply?.title || message_msg || null,
+                        }, unique_id);
+                        if (!flowHandled && message_type === 'text') {
+                            await handleAutoReply(project_id, number, message_msg, unique_id);
+                        }
                     }
                 }
             }

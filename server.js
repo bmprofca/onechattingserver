@@ -31,6 +31,7 @@ import { generateSummary } from "./generate-db-summary.js";
 import subscriptionRouter from "./routes/subscription.js";
 import qrcodeRouter from "./routes/qrcode.js";
 import techProviderRouter from "./routes/techProvider.js";
+import flowBuilderRouter from "./routes/flowBuilder.js";
 
 const app = express();
 
@@ -143,6 +144,7 @@ app.use("/payment", paymentRouter);
 app.use("/company", companyRouter);
 app.use("/test", testRouter);
 app.use("/bot-reply", botReplyRouter);
+app.use("/flow-builder", flowBuilderRouter);
 app.use("/subscription", subscriptionRouter);
 app.use("/qrcode", qrcodeRouter);
 app.use("/admin/qrcode", qrcodeRouter);
