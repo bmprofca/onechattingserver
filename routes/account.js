@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 const router = express.Router();
 import pool from "../db.js";
 import { FUTURE_TIMESTAMP, GENERATE_PASSWORD, GET_BALANCE_BY_USERNAME, IS_STRONG_PASSWORD, RANDOM_STRING, TIMESTAMP, USER_DATA } from "../helpers/function.js";
@@ -7,6 +7,11 @@ import { auth } from "../middleware/auth.js";
 import { sendPasswordResetEmail } from "../helpers/email.js";
 import { sendOtpSms } from "../helpers/sms.js";
 import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
+import { isB2Enabled, uploadBufferToB2, getProxyMediaUrl, getContentTypeFromExtension } from "../helpers/b2Storage.js";
+import { BASE_DOMAIN } from "../helpers/Config.js";
+import { fileTypeFromBuffer } from "file-type";
+import fs from "fs";
+import path from "path";
 
 router.post("/send-otp", async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
@@ -146,6 +151,7 @@ router.post("/login", async (req, res) => {
             country_code,
             mobile,
             email: db_email,
+            profile_picture: user_data.profile_picture || "",
         },
         project_count,
         projects: projects
@@ -241,6 +247,7 @@ router.post("/register", async (req, res) => {
             country_code,
             mobile,
             email: email,
+            profile_picture: "",
         },
         project: {
             project_count,
@@ -264,6 +271,7 @@ const GetProjectsAdminDetails = async (project_id) => {
             country_code: admin_profile.country_code,
             mobile: admin_profile.mobile,
             email: admin_profile.email,
+            profile_picture: admin_profile.profile_picture || "",
             status: admin_profile.status == "1" ? true : false,
         }
 
@@ -283,10 +291,6 @@ router.post("/profile", auth, async (req, res) => {
 
     const user_data = data_row[0];
 
-    if (user_data.role !== 'user') {
-        return res.status(200).json({ error: 'Unauthorized access! You are not a Enduser' })
-    }
-
     const name = user_data.name;
     const country_code = user_data.country_code;
     const mobile = user_data.mobile;
@@ -295,6 +299,7 @@ router.post("/profile", auth, async (req, res) => {
     const firm_name = user_data.firm_name;
     const business_name = user_data.business_name;
     const business_type = user_data.business_type;
+    const profile_picture = user_data.profile_picture || "";
 
     const [project_row] = await pool.query("SELECT project_mapping.type, aisensy_projects.* FROM project_mapping JOIN aisensy_projects ON aisensy_projects.project_id = project_mapping.project_id WHERE project_mapping.username = ? AND project_mapping.is_deleted = ? AND aisensy_projects.status = ?", [username, '0', '1']);
 
@@ -338,6 +343,7 @@ router.post("/profile", auth, async (req, res) => {
             firm_name,
             business_name,
             business_type,
+            profile_picture,
         },
         balance,
         projects: {
@@ -358,8 +364,6 @@ router.post("/profile", auth, async (req, res) => {
             is_business_created: business_details.length > 0,
         }
     }
-
-
 
     return res.status(200).json(return_json)
 });
@@ -384,17 +388,24 @@ router.post("/edit-profile", auth, async (req, res) => {
     const firm_name = decrypt?.firm_name;
     const business_name = decrypt?.business_name;
     const business_type = decrypt?.business_type;
-
+    const profile_picture = decrypt?.profile_picture !== undefined ? decrypt.profile_picture : null;
 
     if (!name || !mobile || !gender || !country_code || !firm_name || !business_name || !business_type) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     try {
-        await pool.query(
-            "UPDATE `users` SET `name`=?,`country_code`=?,`mobile`=?,`gender`=?,`firm_name`=?,`business_name`=?,`business_type`=?,`modify_date`=?,`modify_by`=? WHERE username = ?",
-            [name, country_code, mobile, gender, firm_name, business_name, business_type, TIMESTAMP(), username, username]
-        );
+        if (profile_picture !== null) {
+            await pool.query(
+                "UPDATE `users` SET `name`=?,`country_code`=?,`mobile`=?,`gender`=?,`firm_name`=?,`business_name`=?,`business_type`=?,`profile_picture`=?,`modify_date`=?,`modify_by`=? WHERE username = ?",
+                [name, country_code, mobile, gender, firm_name, business_name, business_type, profile_picture, TIMESTAMP(), username, username]
+            );
+        } else {
+            await pool.query(
+                "UPDATE `users` SET `name`=?,`country_code`=?,`mobile`=?,`gender`=?,`firm_name`=?,`business_name`=?,`business_type`=?,`modify_date`=?,`modify_by`=? WHERE username = ?",
+                [name, country_code, mobile, gender, firm_name, business_name, business_type, TIMESTAMP(), username, username]
+            );
+        }
 
         const new_data = await USER_DATA(username);
 
@@ -409,6 +420,7 @@ router.post("/edit-profile", auth, async (req, res) => {
                 firm_name: new_data?.firm_name,
                 business_name: new_data?.business_name,
                 business_type: new_data?.business_type,
+                profile_picture: new_data?.profile_picture || "",
             },
             msg: 'Profile updated successfully'
         })
@@ -417,9 +429,84 @@ router.post("/edit-profile", auth, async (req, res) => {
             error: 'Failed to update profile'
         })
     }
-
-
 });
+
+async function saveAvatarImage(username, base64Data, originalFileName = 'avatar.png') {
+    let cleanBase64 = String(base64Data || '').trim();
+    let declaredMime = '';
+    if (cleanBase64.includes(";base64,")) {
+        const parts = cleanBase64.split(";base64,");
+        declaredMime = parts[0].replace("data:", "");
+        cleanBase64 = parts[1];
+    }
+
+    const buffer = Buffer.from(cleanBase64, "base64");
+    const detectedType = await fileTypeFromBuffer(buffer);
+    const ext = detectedType?.ext || path.extname(originalFileName).replace(/^\./, "") || "png";
+    const contentType = detectedType?.mime || declaredMime || getContentTypeFromExtension(ext) || "image/png";
+    const fileName = `${RANDOM_STRING(25)}.${ext}`;
+
+    if (isB2Enabled()) {
+        const objectKey = `avatars/${username}/${fileName}`;
+        await uploadBufferToB2(objectKey, buffer, contentType);
+        return getProxyMediaUrl(objectKey);
+    } else {
+        const dir = path.join(process.cwd(), "public", "avatars", username);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        const filePath = path.join(dir, fileName);
+        fs.writeFileSync(filePath, buffer);
+        return `${BASE_DOMAIN}/avatars/${username}/${fileName}`;
+    }
+}
+
+const handleProfilePictureUpdate = async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const username = req.headers["username"] ? req.headers["username"] : '';
+    let profile_picture = decrypt?.profile_picture || '';
+    const image_base64 = decrypt?.image_base64 || decrypt?.base64 || decrypt?.image || '';
+    const file_name = decrypt?.file_name || 'avatar.png';
+
+    if (!profile_picture && !image_base64) {
+        return res.status(200).json({ error: 'profile_picture or image_base64 is required' });
+    }
+
+    try {
+        if (image_base64) {
+            profile_picture = await saveAvatarImage(username, image_base64, file_name);
+        }
+
+        await pool.query(
+            "UPDATE `users` SET `profile_picture` = ?, `modify_date` = ?, `modify_by` = ? WHERE username = ?",
+            [profile_picture, TIMESTAMP(), username, username]
+        );
+
+        return res.status(200).json({
+            error: false,
+            msg: 'Profile picture updated successfully',
+            profile_picture: profile_picture
+        });
+    } catch (error) {
+        return res.status(200).json({
+            error: 'Failed to update profile picture',
+            e: error.message || error
+        });
+    }
+};
+
+router.post("/update-profile-picture", auth, handleProfilePictureUpdate);
+router.post("/upload-profile-picture", auth, handleProfilePictureUpdate);
 
 router.post("/session-check", auth, async (req, res) => {
 

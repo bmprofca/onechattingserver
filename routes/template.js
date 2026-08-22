@@ -13,6 +13,9 @@ import {
 import {
     validateAuthenticationTemplate,
 } from "../helpers/authenticationTemplate.js";
+import {
+    generateWhatsAppTemplateWithAi,
+} from "../helpers/templateAiGenerator.js";
 
 const router = express.Router();
 
@@ -489,6 +492,70 @@ router.post("/template-edit", auth, async (req, res) => {
                 e: error
             });
         }
+    }
+});
+
+// GENERATE AI TEMPLATE
+router.post("/generate-ai-template", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const username = req.headers["username"] ? req.headers["username"] : '';
+    const project_id = decrypt?.project_id;
+    const prompt = decrypt?.prompt || decrypt?.description || '';
+    const category = decrypt?.category || 'MARKETING';
+    const language = decrypt?.language || 'en';
+    const tone = decrypt?.tone || 'friendly and engaging';
+    const header_type = decrypt?.header_type || null;
+    const button_type = decrypt?.button_type || null;
+    const custom_instructions = decrypt?.custom_instructions || '';
+
+    if (!project_id || !prompt) {
+        return res.status(200).json({ error: 'project_id and prompt are required' });
+    }
+
+    const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+    if (!check_project_mapping) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    try {
+        const result = await generateWhatsAppTemplateWithAi({
+            projectId: project_id,
+            prompt,
+            category,
+            language,
+            tone,
+            headerType: header_type,
+            buttonType: button_type,
+            customInstructions: custom_instructions,
+        });
+
+        return res.status(200).json({
+            error: false,
+            msg: 'Template generated successfully',
+            data: {
+                template: result.template,
+                sample_variables: result.sample_variables,
+                explanation: result.explanation,
+                provider: result.provider,
+                model: result.model,
+                usage: result.usage,
+            }
+        });
+    } catch (error) {
+        console.error("Error generating AI template:", error.message || error);
+        return res.status(200).json({
+            error: error.message || 'Failed to generate AI template',
+        });
     }
 });
 
