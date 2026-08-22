@@ -71,8 +71,35 @@ router.post("/toggle", auth, async (req, res) => {
 
 router.post("/delete", auth, async (req, res) => {
     const ctx = await requestData(req, res); if (!ctx) return;
-    try { await pool.query("UPDATE flows SET is_deleted='1',status='archived',modify_date=?,modify_by=? WHERE flow_id=? AND project_id=?", [TIMESTAMP(), ctx.username, ctx.decrypt.flow_id, ctx.projectId]); await pool.query("UPDATE aisensy_projects SET active_flow_id=NULL,flow_builder_enabled='0' WHERE project_id=? AND active_flow_id=?", [ctx.projectId, ctx.decrypt.flow_id]); return res.json({ error: false, msg: "Flow deleted successfully" }); }
-    catch (error) { return res.status(200).json({ error: "Failed to delete flow", e: error.message }); }
+    try {
+        const rawIds = ctx.decrypt.flow_ids || ctx.decrypt.ids || ctx.decrypt.flow_id || ctx.decrypt.id;
+        const idList = Array.isArray(rawIds) ? rawIds : [rawIds];
+        const flowIds = Array.from(new Set(idList.map(id => String(id || "").trim()).filter(Boolean)));
+
+        if (flowIds.length === 0) {
+            return res.status(200).json({ error: "No flow ID(s) provided for deletion" });
+        }
+
+        const now = TIMESTAMP();
+        const [result] = await pool.query(
+            "UPDATE flows SET is_deleted='1', status='archived', modify_date=?, modify_by=? WHERE flow_id IN (?) AND project_id=?",
+            [now, ctx.username, flowIds, ctx.projectId]
+        );
+
+        await pool.query(
+            "UPDATE aisensy_projects SET active_flow_id=NULL, flow_builder_enabled='0' WHERE project_id=? AND active_flow_id IN (?)",
+            [ctx.projectId, flowIds]
+        );
+
+        return res.json({
+            error: false,
+            deleted_count: result.affectedRows,
+            deleted_ids: flowIds,
+            msg: `${flowIds.length} flow(s) deleted successfully`
+        });
+    } catch (error) {
+        return res.status(200).json({ error: "Failed to delete flow(s)", e: error.message });
+    }
 });
 
 export default router;

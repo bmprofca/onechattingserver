@@ -171,6 +171,33 @@ router.post("/contact-list", auth, async (req, res) => {
     let lastItemId = finalLastId;
     let firstItemId = finalFirstId;
     if (rows.length > 0) {
+        let contactGroupsMap = new Map();
+        const contactIds = rows.map(r => r.contact_id).filter(Boolean);
+        if (contactIds.length > 0) {
+            try {
+                const [groupRows] = await pool.query(
+                    `SELECT cgm.contact_id, cgm.group_id, cgm.unique_id, cg.name AS group_name, cg.remark
+                     FROM \`contact_group_mapping\` cgm
+                     INNER JOIN \`contact_groups\` cg ON cg.group_id = cgm.group_id AND cg.is_deleted = '0'
+                     WHERE cgm.contact_id IN (?) AND cgm.is_deleted = '0'`,
+                    [contactIds]
+                );
+                for (const g of groupRows) {
+                    const list = contactGroupsMap.get(g.contact_id) || [];
+                    list.push({
+                        id: g.group_id,
+                        group_id: g.group_id,
+                        name: g.group_name,
+                        remark: g.remark,
+                        unique_id: g.unique_id
+                    });
+                    contactGroupsMap.set(g.contact_id, list);
+                }
+            } catch (e) {
+                console.error("Failed to load contact groups for contact-list:", e);
+            }
+        }
+
         for (let i = 0; i < rows.length; i++) {
             let element = rows[i];
             let contact_id = element.contact_id;
@@ -181,11 +208,24 @@ router.post("/contact-list", auth, async (req, res) => {
             let firm_name = element.firm_name;
             let remark = element.remark;
             let is_favorite = element?.is_favorite == "yes" ? true : false;
+            let contactGroups = contactGroupsMap.get(contact_id) || [];
 
             const [assigned_row] = await pool.query("SELECT * FROM `chat_assigned` WHERE number = ? AND project_id = ? ORDER BY id DESC LIMIT 1", [number, project_id]);
             const agent_id = assigned_row[0]?.username;
 
-            out.push({ name, number, email, assign_to_me: agent_id == username ? true : false, website, firm_name, remark, contact_id, is_favorite });
+            out.push({
+                name,
+                number,
+                email,
+                assign_to_me: agent_id == username ? true : false,
+                website,
+                firm_name,
+                remark,
+                contact_id,
+                is_favorite,
+                groups: contactGroups,
+                group_ids: contactGroups.map(g => g.group_id)
+            });
 
             // Track the first and last item's id for cursor-based pagination
             if (i === 0) {
@@ -915,8 +955,122 @@ router.post("/group-contact-add", auth, async (req, res) => {
         })
     }
 
+});
 
+router.post("/group-contact-add-bulk", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
 
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const username = req.headers["username"] ? req.headers["username"] : '';
+    const project_id = decrypt?.project_id;
+    let raw_contact_ids = decrypt?.contact_ids ?? decrypt?.contact_id;
+    let raw_group_ids = decrypt?.group_ids ?? decrypt?.group_id;
+
+    if (!Array.isArray(raw_contact_ids)) {
+        raw_contact_ids = raw_contact_ids !== undefined && raw_contact_ids !== null && raw_contact_ids !== '' ? [raw_contact_ids] : [];
+    }
+    if (!Array.isArray(raw_group_ids)) {
+        raw_group_ids = raw_group_ids !== undefined && raw_group_ids !== null && raw_group_ids !== '' ? [raw_group_ids] : [];
+    }
+
+    const contact_ids = Array.from(new Set(raw_contact_ids.map(c => String(c)).filter(Boolean)));
+    const group_ids = Array.from(new Set(raw_group_ids.map(g => String(g)).filter(Boolean)));
+
+    if (!project_id || contact_ids.length === 0 || group_ids.length === 0) {
+        return res.status(200).json({ error: 'Provide project_id, group_ids, and contact_ids' });
+    }
+
+    const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+    if (!check_project_mapping) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    try {
+        // Validate group IDs
+        const groupPlaceholders = group_ids.map(() => '?').join(',');
+        const [group_check] = await pool.query(
+            `SELECT \`group_id\` FROM \`contact_groups\` WHERE \`project_id\` = ? AND \`group_id\` IN (${groupPlaceholders}) AND \`is_deleted\` = '0'`,
+            [project_id, ...group_ids]
+        );
+        const validGroupIds = group_check.map(g => String(g.group_id));
+        if (validGroupIds.length === 0) {
+            return res.status(200).json({ error: 'No valid group IDs found for this project' });
+        }
+
+        // Validate contact IDs
+        const contactPlaceholders = contact_ids.map(() => '?').join(',');
+        const [contact_check] = await pool.query(
+            `SELECT \`contact_id\` FROM \`contacts\` WHERE \`project_id\` = ? AND \`contact_id\` IN (${contactPlaceholders}) AND \`is_deleted\` = '0'`,
+            [project_id, ...contact_ids]
+        );
+        const validContactIds = contact_check.map(c => String(c.contact_id));
+        if (validContactIds.length === 0) {
+            return res.status(200).json({ error: 'No valid contact IDs found for this project' });
+        }
+
+        // Query existing mappings
+        const validGPlaceholders = validGroupIds.map(() => '?').join(',');
+        const validCPlaceholders = validContactIds.map(() => '?').join(',');
+        const [existing_mappings] = await pool.query(
+            `SELECT \`group_id\`, \`contact_id\` FROM \`contact_group_mapping\` WHERE \`group_id\` IN (${validGPlaceholders}) AND \`contact_id\` IN (${validCPlaceholders}) AND \`is_deleted\` = '0'`,
+            [...validGroupIds, ...validContactIds]
+        );
+        const existingSet = new Set(
+            existing_mappings.map(m => `${m.group_id}_${m.contact_id}`)
+        );
+
+        // Build batch insert rows
+        const timestamp = TIMESTAMP();
+        const rowsToInsert = [];
+        for (const gid of validGroupIds) {
+            for (const cid of validContactIds) {
+                const keyPair = `${gid}_${cid}`;
+                if (!existingSet.has(keyPair)) {
+                    existingSet.add(keyPair);
+                    rowsToInsert.push([
+                        RANDOM_STRING(30),
+                        cid,
+                        gid,
+                        timestamp,
+                        username,
+                        timestamp,
+                        username,
+                        '0'
+                    ]);
+                }
+            }
+        }
+
+        if (rowsToInsert.length > 0) {
+            await pool.query(
+                "INSERT INTO `contact_group_mapping`(`unique_id`, `contact_id`, `group_id`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES ?",
+                [rowsToInsert]
+            );
+        }
+
+        return res.status(200).json({
+            error: false,
+            msg: rowsToInsert.length > 0
+                ? 'Contacts added to group(s) successfully'
+                : 'Contacts are already in the selected group(s)',
+            inserted_count: rowsToInsert.length,
+            total_contacts: validContactIds.length,
+            total_groups: validGroupIds.length
+        });
+    } catch (error) {
+        return res.status(200).json({
+            error: 'Failed to add contacts to groups',
+            e: error?.message || error
+        });
+    }
 });
 
 router.post("/group-contact-delete", auth, async (req, res) => {
@@ -938,8 +1092,19 @@ router.post("/group-contact-delete", auth, async (req, res) => {
     const all_contact_delete = decrypt?.all_contact_delete === true || decrypt?.all_contact_delete === 'true' || decrypt?.all_contact_delete === 1;
     const project_id = decrypt?.project_id;
     const group_id = decrypt?.group_id;
-    const unique_ids = Array.isArray(decrypt?.unique_ids) ? decrypt.unique_ids : [];
-    const contact_ids = Array.isArray(decrypt?.contact_ids) ? decrypt.contact_ids : [];
+
+    let raw_unique_ids = decrypt?.unique_ids ?? decrypt?.unique_id;
+    let raw_contact_ids = decrypt?.contact_ids ?? decrypt?.contact_id ?? decrypt?.ids;
+
+    if (!Array.isArray(raw_unique_ids)) {
+        raw_unique_ids = raw_unique_ids !== undefined && raw_unique_ids !== null && raw_unique_ids !== '' ? [raw_unique_ids] : [];
+    }
+    if (!Array.isArray(raw_contact_ids)) {
+        raw_contact_ids = raw_contact_ids !== undefined && raw_contact_ids !== null && raw_contact_ids !== '' ? [raw_contact_ids] : [];
+    }
+
+    const unique_ids = Array.from(new Set(raw_unique_ids.map(u => String(u)).filter(Boolean)));
+    const contact_ids = Array.from(new Set(raw_contact_ids.map(c => String(c)).filter(Boolean)));
 
     if (!project_id || !group_id) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
@@ -1544,6 +1709,58 @@ router.post("/group-contact-list", auth, async (req, res) => {
         }
     })
 
+});
+
+router.post("/contact-groups-by-contact", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const username = req.headers["username"] ? req.headers["username"] : '';
+    const project_id = decrypt?.project_id;
+    const contact_id = decrypt?.contact_id;
+
+    if (!project_id || !contact_id) {
+        return res.status(200).json({ error: 'Provide project_id and contact_id' });
+    }
+
+    const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+    if (!check_project_mapping) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    try {
+        const [rows] = await pool.query(
+            `SELECT cgm.unique_id, cgm.group_id, cgm.contact_id, cg.name, cg.remark
+             FROM \`contact_group_mapping\` cgm
+             INNER JOIN \`contact_groups\` cg ON cg.group_id = cgm.group_id AND cg.is_deleted = '0'
+             WHERE cgm.contact_id = ? AND cg.project_id = ? AND cgm.is_deleted = '0'`,
+            [contact_id, project_id]
+        );
+
+        return res.status(200).json({
+            error: false,
+            data: rows.map(r => ({
+                id: r.group_id,
+                group_id: r.group_id,
+                name: r.name,
+                remark: r.remark,
+                unique_id: r.unique_id
+            }))
+        });
+    } catch (error) {
+        return res.status(200).json({
+            error: 'Failed to fetch contact groups',
+            e: error?.message || error
+        });
+    }
 });
 
 export default router;
