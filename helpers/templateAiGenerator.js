@@ -106,6 +106,41 @@ function toUsage(inputTokens, outputTokens) {
     };
 }
 
+// Meta template button labels are plain text only: no variables, line breaks,
+// emoji, or WhatsApp formatting markers, and a maximum of 25 characters.
+function sanitizeTemplateButtonText(value, fallback = "Learn more") {
+    const cleaned = String(value || fallback)
+        .normalize("NFKC")
+        .replace(/\{\{[^}]+\}\}/g, "")
+        .replace(/[\r\n]+/g, " ")
+        .replace(/[\*_~`]/g, "")
+        .replace(/\p{Extended_Pictographic}/gu, "")
+        .replace(/[\uFE0E\uFE0F\u200D]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 25);
+    return cleaned || fallback;
+}
+
+export function sanitizeTemplateButtons(components) {
+    return components.map((component) => {
+        if (String(component.type || "").toUpperCase() !== "BUTTONS" || !Array.isArray(component.buttons)) return component;
+        return {
+            ...component,
+            buttons: component.buttons.slice(0, 3).map((button) => {
+                const type = String(button.type || "QUICK_REPLY").toUpperCase();
+                const normalized = { ...button, type, text: sanitizeTemplateButtonText(button.text, type === "URL" ? "Visit website" : type === "PHONE_NUMBER" ? "Call us" : "Learn more") };
+                if (typeof normalized.url === "string") {
+                    normalized.url = normalized.url.replace(/\{\{[^}]+\}\}/g, "").replace(/[\r\n]/g, "").trim();
+                    delete normalized.example;
+                }
+                if (typeof normalized.phone_number === "string") normalized.phone_number = normalized.phone_number.replace(/[^0-9+]/g, "");
+                return normalized;
+            }),
+        };
+    });
+}
+
 /**
  * Call Gemini
  */
@@ -344,6 +379,8 @@ function normalizeTemplate(parsedData, fallbackCategory = "MARKETING", fallbackL
         }
         return norm;
     });
+
+    components = sanitizeTemplateButtons(components);
 
     const templatePayload = {
         name,

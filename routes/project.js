@@ -10,33 +10,27 @@ import { activateProjectServices } from "../helpers/aisensyBilling.js";
 import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 import { getActiveTechProvider, subscribeMetaWabaWebhook, exchangeMetaEmbeddedSignupCode } from "../helpers/techProvider.js";
 
-// ---------------------------------------------------------------------
-// Returns which Meta Tech Provider is currently active
-// (system_tech_providers.is_active = '1') so the frontend can configure
-// FB.init / FB.login correctly.
-//
-// IMPORTANT: everything returned here comes straight from the DB row -
-// there are NO hardcoded app_id / config_id / graph_version / solution_id
-// anywhere in the code. Whichever row is is_active = '1' in
-// system_tech_providers is the single source of truth, for BOTH
-// provider_type = 'own' and provider_type = 'aisensy'.
-// ---------------------------------------------------------------------
+// =====================================================================
+// GET /project/embedded-signup-config
+// Returns the active tech provider config so the web frontend can
+// initialise FB.init() and FB.login() with correct credentials.
+// All values come from the single is_active='1' row in system_tech_providers.
+// Serves BOTH 'own' and 'aisensy' provider_types.
+// =====================================================================
 router.get("/embedded-signup-config", auth, async (req, res) => {
     try {
         const active = await getActiveTechProvider();
 
-        if (!active) {
-            return res.status(200).json({ error: "No active Meta Tech Provider configured" });
+        if (!active || (!active.meta_app_id && !active.aisensy_partner_id)) {
+            return res.status(200).json({ error: "No active Meta Tech Provider configured. Please configure one in Admin > Tech Provider." });
         }
 
         return res.status(200).json({
             error: false,
-            provider: active.provider_type, // 'own' | 'aisensy'
+            provider: active.provider_type,           // 'own' | 'aisensy'
             meta_app_id: active.meta_app_id || "",
             meta_config_id: active.meta_config_id || "",
             meta_graph_version: active.meta_graph_version || "v21.0",
-            // Only relevant for the 'aisensy' partner flow, but harmless to
-            // always include - the frontend only uses it when provider is 'aisensy'.
             solution_id: active.aisensy_solution_id || ""
         });
     } catch (err) {
@@ -45,84 +39,134 @@ router.get("/embedded-signup-config", auth, async (req, res) => {
     }
 });
 
+// =====================================================================
+// POST /project/embed-signup
+//
+// Unified endpoint — returns everything the client needs to start the
+// WhatsApp Business Embedded Signup, branched by the active DB provider.
+//
+// Response shapes:
+//   aisensy → { error: false, provider: "aisensy", url: "<one-time URL>" }
+//   own     → { error: false, provider: "own", app_id, config_id, graph_version }
+//
+// For 'aisensy': one-time embeddedSignupURL is generated via AiSensy
+//   Partner API and returned to the client to open (browser tab / Linking).
+//
+// For 'own': no URL generated — the client uses FB SDK popup (web) or
+//   an OAuth URL via Linking (mobile), then submits the authorization
+//   code via /submit-waba-id.
+// =====================================================================
 router.post("/embed-signup", auth, async (req, res) => {
-    if (req.body && Object.keys(req.body).length > 0) {
-        var data = req.body?.data || '';
-        var key = req.body?.key || '';
-    }
-
-    const decrypt = Decrypt(data, key);
-
-    if (!decrypt) {
-        return res.status(200).json({ error: 'Failed to decrypt data' });
-    }
-
-    const username = req.headers["username"] ? req.headers["username"] : '';
-    const project_id = decrypt.project_id;
-
-    if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
-    }
-
-    // CHECK IF PROJECT IS OWNER OF THE USER
-    const [check_mapping] = await pool.query("SELECT * FROM project_mapping WHERE project_id = ? AND username = ? AND type = ?", [project_id, username, 'admin']);
-
-    if (check_mapping.length !== 1) {
-        return res.status(200).json({ error: 'Unauthorized Access' })
-    }
-
-    const activeProvider = await getActiveTechProvider();
-
-    // If using Own Meta Tech Provider
-    if (activeProvider.provider_type === "own") {
-        return res.status(200).json({
-            error: false,
-            provider: "own",
-            app_id: activeProvider.meta_app_id || "",
-            config_id: activeProvider.meta_config_id || "",
-            graph_version: activeProvider.meta_graph_version || "v21.0"
-        });
-    }
-
-    // Default: AiSensy Partner flow
-    const project_data = await AISENSY_PROJECT_DATA(project_id);
-
-    if (!project_data) {
-        return res.status(200).json({ error: 'Can not get project data from database' });
-    }
-
-    const business_id = project_data.business_id;
-    const partnerId = activeProvider.aisensy_partner_id;
-    const apiKey = activeProvider.aisensy_api_key;
-
-    const options = {
-        method: 'POST',
-        url: `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/generate-waba-link`,
-        headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-AiSensy-Partner-API-Key': apiKey
-        },
-        data: {
-            businessId: business_id,
-            assistantId: project_id,
-        }
-    };
-
     try {
-        const { data } = await axios.request(options);
-        const url = data?.embeddedSignupURL;
-        return res.status(200).json({
-            error: false,
-            provider: "aisensy",
-            url
-        })
-    } catch (error) {
-        return res.status(200).json({
-            error: 'Failed to get embed URL',
-        })
-    }
+        const data = req.body?.data || '';
+        const key = req.body?.key || '';
 
+        const decrypt = Decrypt(data, key);
+        if (!decrypt) {
+            return res.status(200).json({ error: 'Failed to decrypt request data' });
+        }
+
+        const username = req.headers["username"] || '';
+        const project_id = decrypt.project_id;
+
+        if (!project_id) {
+            return res.status(200).json({ error: 'project_id is required' });
+        }
+
+        // Verify the requesting user is admin of this project
+        const [check_mapping] = await pool.query(
+            "SELECT id FROM project_mapping WHERE project_id = ? AND username = ? AND type = ? AND is_deleted = '0'",
+            [project_id, username, 'admin']
+        );
+        if (check_mapping.length !== 1) {
+            return res.status(200).json({ error: 'Unauthorized: you are not admin of this project' });
+        }
+
+        // Read active tech provider from DB (cached 30s)
+        const activeProvider = await getActiveTechProvider();
+        if (!activeProvider || !activeProvider.provider_type) {
+            return res.status(200).json({ error: 'No active tech provider configured. Contact your admin.' });
+        }
+
+        // ------------------------------------------------------------------
+        // OWN Meta Tech Provider
+        // Client runs FB.init() + FB.login() itself using these returned values.
+        // No URL is generated here; the FB SDK popup handles everything.
+        // ------------------------------------------------------------------
+        if (activeProvider.provider_type === "own") {
+            if (!activeProvider.meta_app_id || !activeProvider.meta_config_id) {
+                return res.status(200).json({ error: 'Own Meta provider is not fully configured (missing app_id or config_id). Contact your admin.' });
+            }
+            return res.status(200).json({
+                error: false,
+                provider: "own",
+                app_id: activeProvider.meta_app_id,
+                config_id: activeProvider.meta_config_id,
+                graph_version: activeProvider.meta_graph_version || "v21.0"
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // AiSensy Partner Provider
+        // Generate a one-time embeddedSignupURL via the AiSensy Partner API.
+        // ------------------------------------------------------------------
+        if (!activeProvider.aisensy_partner_id || !activeProvider.aisensy_api_key) {
+            return res.status(200).json({ error: 'AiSensy provider credentials not configured. Contact your admin.' });
+        }
+
+        const project_data = await AISENSY_PROJECT_DATA(project_id);
+        if (!project_data) {
+            return res.status(200).json({ error: 'Project data not found in database' });
+        }
+
+        const business_id = project_data.business_id;
+        if (!business_id) {
+            return res.status(200).json({ error: 'Project has no business_id linked. Please ensure the project was created via AiSensy.' });
+        }
+
+        try {
+            const wabaLinkPayload = {
+                businessId: business_id,
+                assistantId: project_id,
+            };
+            if (activeProvider.aisensy_solution_id) {
+                wabaLinkPayload.solutionId = activeProvider.aisensy_solution_id;
+            }
+
+            const { data: aisensyData } = await axios.post(
+                `https://apis.aisensy.com/partner-apis/v1/partner/${activeProvider.aisensy_partner_id}/generate-waba-link`,
+                wabaLinkPayload,
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-AiSensy-Partner-API-Key': activeProvider.aisensy_api_key
+                    },
+                    timeout: 15000
+                }
+            );
+
+            const url = aisensyData?.embeddedSignupURL;
+            if (!url) {
+                console.error("[embed-signup] AiSensy returned no embeddedSignupURL", aisensyData);
+                return res.status(200).json({ error: 'AiSensy did not return a signup URL. Please try again.' });
+            }
+
+            return res.status(200).json({
+                error: false,
+                provider: "aisensy",
+                url
+            });
+        } catch (aisensyError) {
+            const msg = aisensyError?.response?.data?.message || aisensyError.message || 'Failed to generate signup URL from AiSensy';
+            console.error("[embed-signup] AiSensy API error:", msg);
+            return res.status(200).json({ error: msg });
+        }
+
+    } catch (err) {
+        console.error("[embed-signup] Unexpected error:", err);
+        return res.status(200).json({ error: 'Internal server error in embed-signup' });
+    }
 });
 
 router.post("/submit-waba-id", auth, async (req, res) => {
@@ -137,7 +181,7 @@ router.post("/submit-waba-id", auth, async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    console.log("Waba submit payload", decrypt);
+    // [DEBUG REMOVED] payload logged during development
 
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;

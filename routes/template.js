@@ -15,7 +15,10 @@ import {
 } from "../helpers/authenticationTemplate.js";
 import {
     generateWhatsAppTemplateWithAi,
+    resolveAiProviderConfig,
+    sanitizeTemplateButtons,
 } from "../helpers/templateAiGenerator.js";
+import { generateTemplateHeaderMedia } from "../helpers/templateHeaderMedia.js";
 
 const router = express.Router();
 
@@ -70,7 +73,8 @@ router.post("/create-template", auth, async (req, res) => {
         return res.status(200).json({ error: 'Language code not provided' });
     }
 
-    const authValidation = validateAuthenticationTemplate(template);
+    const safeTemplate = { ...template, components: sanitizeTemplateButtons(template.components || []) };
+    const authValidation = validateAuthenticationTemplate(safeTemplate);
     if (!authValidation.valid) {
         return res.status(200).json({ error: authValidation.error });
     }
@@ -419,10 +423,10 @@ router.post("/template-edit", auth, async (req, res) => {
     const template_name = template?.name || template_data?.template_name;
     const editCategory = category || template?.category || template_data?.category;
 
-    let templatePayload = template;
+    let templatePayload = { ...template, components: sanitizeTemplateButtons(template.components || []) };
     if (editCategory === 'AUTHENTICATION') {
         const authValidation = validateAuthenticationTemplate({
-            ...template,
+            ...templatePayload,
             name: template_name,
             language: language_code,
             category: 'AUTHENTICATION',
@@ -556,6 +560,44 @@ router.post("/generate-ai-template", auth, async (req, res) => {
         return res.status(200).json({
             error: error.message || 'Failed to generate AI template',
         });
+    }
+});
+
+// Generate and upload the media selected for an AI template header.
+router.post("/generate-ai-header-media", auth, async (req, res) => {
+    const data = req.body?.data || '';
+    const key = req.body?.key || '';
+    const decrypt = Decrypt(data, key);
+    if (!decrypt) return res.status(200).json({ error: 'Failed to decrypt data' });
+
+    const username = req.headers["username"] || '';
+    const project_id = decrypt?.project_id;
+    const format = String(decrypt?.format || '').toUpperCase();
+    if (!project_id || !["IMAGE", "VIDEO", "DOCUMENT"].includes(format)) {
+        return res.status(200).json({ error: 'project_id and a valid media format are required' });
+    }
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    try {
+        const config = await resolveAiProviderConfig(pool, project_id);
+        if (!config?.apiKey || !['openai', 'gemini'].includes(config.provider)) {
+            return res.status(200).json({ error: 'AI header media requires an active OpenAI or Gemini project key' });
+        }
+        const media = await generateTemplateHeaderMedia({
+            apiKey: config.apiKey,
+            provider: config.provider,
+            format,
+            prompt: decrypt?.prompt,
+            body: decrypt?.body,
+            headerText: decrypt?.header_text,
+        });
+        return res.status(200).json({ error: false, data: media });
+    } catch (error) {
+        console.error('Error generating AI header media:', error.message || error);
+        const providerMessage = error?.response?.data?.error?.message || error?.response?.data?.message;
+        return res.status(200).json({ error: providerMessage || error.message || 'Failed to generate AI header media' });
     }
 });
 

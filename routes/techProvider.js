@@ -92,8 +92,9 @@ router.post("/test-connection", authAdmin, async (req, res) => {
             const apiKey = (aisensy?.api_key && !aisensy.api_key.includes("••••")) 
                 ? aisensy.api_key 
                 : active.aisensy_api_key;
+            const solutionId = aisensy?.solution_id || active.aisensy_solution_id;
 
-            const testRes = await testAiSensyConnection(partnerId, apiKey);
+            const testRes = await testAiSensyConnection(partnerId, apiKey, solutionId);
             return res.status(200).json({
                 error: !testRes.success,
                 provider: "aisensy",

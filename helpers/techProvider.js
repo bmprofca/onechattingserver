@@ -36,6 +36,7 @@ export async function getActiveTechProvider(forceFresh = false) {
         provider_type: "aisensy",
         aisensy_partner_id: "",
         aisensy_api_key: "",
+        aisensy_solution_id: "",
         meta_app_id: "",
         meta_app_secret: "",
         meta_config_id: "",
@@ -77,7 +78,8 @@ export async function getSanitizedTechProviderSettings() {
         aisensy: {
             partner_id: raw.aisensy_partner_id || "",
             api_key_masked: maskSensitive(raw.aisensy_api_key),
-            has_api_key: Boolean(raw.aisensy_api_key)
+            has_api_key: Boolean(raw.aisensy_api_key),
+            solution_id: raw.aisensy_solution_id || ""
         },
         own_meta: {
             app_id: raw.meta_app_id || "",
@@ -104,31 +106,47 @@ export async function saveTechProviderSettings(payload, username = "admin") {
 
     const provider_type = payload.provider_type === "own" ? "own" : "aisensy";
 
-    // AiSensy fields
-    const aisensy_partner_id = payload.aisensy_partner_id !== undefined ? String(payload.aisensy_partner_id).trim() : current.aisensy_partner_id;
+    // AiSensy fields (supporting flat and nested payload keys)
+    const partnerIdInput = payload.aisensy_partner_id !== undefined ? payload.aisensy_partner_id : payload.aisensy?.partner_id;
+    const aisensy_partner_id = partnerIdInput !== undefined ? String(partnerIdInput).trim() : (current.aisensy_partner_id || "");
+
+    const apiKeyInput = payload.aisensy_api_key !== undefined ? payload.aisensy_api_key : payload.aisensy?.api_key;
     let aisensy_api_key = current.aisensy_api_key;
-    if (payload.aisensy_api_key && !payload.aisensy_api_key.includes("••••")) {
-        aisensy_api_key = String(payload.aisensy_api_key).trim();
+    if (apiKeyInput !== undefined && !String(apiKeyInput).includes("••••")) {
+        aisensy_api_key = String(apiKeyInput).trim();
     }
 
-    // Meta Tech Provider fields
-    const meta_app_id = payload.meta_app_id !== undefined ? String(payload.meta_app_id).trim() : current.meta_app_id;
-    const meta_config_id = payload.meta_config_id !== undefined ? String(payload.meta_config_id).trim() : current.meta_config_id;
-    const meta_graph_version = payload.meta_graph_version ? String(payload.meta_graph_version).trim() : (current.meta_graph_version || "v21.0");
+    const solutionIdInput = payload.aisensy_solution_id !== undefined 
+        ? payload.aisensy_solution_id 
+        : (payload.aisensy?.solution_id !== undefined ? payload.aisensy?.solution_id : payload.solution_id);
+    const aisensy_solution_id = solutionIdInput !== undefined ? String(solutionIdInput).trim() : (current.aisensy_solution_id || "");
 
+    // Meta Tech Provider fields (supporting flat and nested payload keys)
+    const appIdInput = payload.meta_app_id !== undefined ? payload.meta_app_id : payload.own_meta?.app_id;
+    const meta_app_id = appIdInput !== undefined ? String(appIdInput).trim() : (current.meta_app_id || "");
+
+    const configIdInput = payload.meta_config_id !== undefined ? payload.meta_config_id : payload.own_meta?.config_id;
+    const meta_config_id = configIdInput !== undefined ? String(configIdInput).trim() : (current.meta_config_id || "");
+
+    const graphVersionInput = payload.meta_graph_version !== undefined ? payload.meta_graph_version : payload.own_meta?.graph_version;
+    const meta_graph_version = graphVersionInput ? String(graphVersionInput).trim() : (current.meta_graph_version || "v21.0");
+
+    const appSecretInput = payload.meta_app_secret !== undefined ? payload.meta_app_secret : payload.own_meta?.app_secret;
     let meta_app_secret = current.meta_app_secret;
-    if (payload.meta_app_secret && !payload.meta_app_secret.includes("••••")) {
-        meta_app_secret = String(payload.meta_app_secret).trim();
+    if (appSecretInput !== undefined && !String(appSecretInput).includes("••••")) {
+        meta_app_secret = String(appSecretInput).trim();
     }
 
+    const systemUserTokenInput = payload.meta_system_user_token !== undefined ? payload.meta_system_user_token : payload.own_meta?.system_user_token;
     let meta_system_user_token = current.meta_system_user_token;
-    if (payload.meta_system_user_token && !payload.meta_system_user_token.includes("••••")) {
-        meta_system_user_token = String(payload.meta_system_user_token).trim();
+    if (systemUserTokenInput !== undefined && !String(systemUserTokenInput).includes("••••")) {
+        meta_system_user_token = String(systemUserTokenInput).trim();
     }
 
+    const webhookVerifyTokenInput = payload.meta_webhook_verify_token !== undefined ? payload.meta_webhook_verify_token : payload.own_meta?.webhook_verify_token;
     let meta_webhook_verify_token = current.meta_webhook_verify_token;
-    if (payload.meta_webhook_verify_token && !payload.meta_webhook_verify_token.includes("••••")) {
-        meta_webhook_verify_token = String(payload.meta_webhook_verify_token).trim();
+    if (webhookVerifyTokenInput !== undefined && !String(webhookVerifyTokenInput).includes("••••")) {
+        meta_webhook_verify_token = String(webhookVerifyTokenInput).trim();
     }
 
     const [existing] = await pool.query("SELECT id FROM system_tech_providers LIMIT 1");
@@ -138,6 +156,7 @@ export async function saveTechProviderSettings(payload, username = "admin") {
                 provider_type = ?,
                 aisensy_partner_id = ?,
                 aisensy_api_key = ?,
+                aisensy_solution_id = ?,
                 meta_app_id = ?,
                 meta_app_secret = ?,
                 meta_config_id = ?,
@@ -151,6 +170,7 @@ export async function saveTechProviderSettings(payload, username = "admin") {
             provider_type,
             aisensy_partner_id,
             aisensy_api_key,
+            aisensy_solution_id,
             meta_app_id,
             meta_app_secret,
             meta_config_id,
@@ -166,6 +186,7 @@ export async function saveTechProviderSettings(payload, username = "admin") {
                 provider_type,
                 aisensy_partner_id,
                 aisensy_api_key,
+                aisensy_solution_id,
                 meta_app_id,
                 meta_app_secret,
                 meta_config_id,
@@ -175,11 +196,12 @@ export async function saveTechProviderSettings(payload, username = "admin") {
                 is_active,
                 create_by,
                 modify_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '1', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1', ?, ?)
         `, [
             provider_type,
             aisensy_partner_id,
             aisensy_api_key,
+            aisensy_solution_id,
             meta_app_id,
             meta_app_secret,
             meta_config_id,
@@ -198,16 +220,21 @@ export async function saveTechProviderSettings(payload, username = "admin") {
 /**
  * Test AiSensy Partner Credentials
  */
-export async function testAiSensyConnection(partnerId, apiKey) {
+export async function testAiSensyConnection(partnerId, apiKey, solutionId = null) {
     if (!partnerId || !apiKey) {
         return { success: false, message: "Partner ID and Partner API Key are required." };
     }
 
     try {
+        const testPayload = { businessId: "test_health_check", assistantId: "test_health_check" };
+        if (solutionId) {
+            testPayload.solutionId = solutionId;
+        }
+
         // Attempt a basic call to AiSensy partner endpoint
         const response = await axios.post(
             `https://apis.aisensy.com/partner-apis/v1/partner/${partnerId}/generate-waba-link`,
-            { businessId: "test_health_check", assistantId: "test_health_check" },
+            testPayload,
             {
                 headers: {
                     "Content-Type": "application/json",
