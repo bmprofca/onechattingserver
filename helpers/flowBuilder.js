@@ -45,14 +45,60 @@ function nextNode(graph, nodeId, handle) {
     return outgoingEdges(graph, nodeId, handle)[0]?.target || (!handle ? outgoingEdges(graph, nodeId)[0]?.target : null);
 }
 
+const GREETING_TRIGGERS = new Set([
+    "hi", "hello", "hey", "start", "menu", "help", "/start", "/menu",
+    "namaste", "hola", "bonjour", "hlo", "helo", "main menu"
+]);
+
+function isExplicitFlowStart(input, graph) {
+    // 1. If user clicked an interactive list or button, it's an explicit interaction
+    if (input.interaction_id) return true;
+
+    const text = String(input.text || "").trim().toLowerCase();
+    if (!text) return false;
+
+    // 2. Standard common greetings / menu commands
+    if (GREETING_TRIGGERS.has(text)) return true;
+
+    // 3. Keyword nodes directly linked from the start node
+    const startNode = graph.nodes.find((n) => n.type === "start");
+    if (startNode) {
+        const directEdges = outgoingEdges(graph, startNode.id);
+        for (const edge of directEdges) {
+            const targetNode = graph.nodes.find((n) => String(n.id) === String(edge.target));
+            if (targetNode?.type === "keyword" && matches(targetNode, input)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 function matches(node, input) {
     const value = String(node?.data?.value || "").trim().toLowerCase();
     const text = String(input.text || "").trim().toLowerCase();
+    const interactionId = String(input.interaction_id || "").trim().toLowerCase();
+    const interactionTitle = String(input.interaction_title || "").trim().toLowerCase();
+
     if (node.type === "keyword") {
         const mode = node.data?.match || "contains";
-        return mode === "exact" ? text === value : mode === "starts_with" ? text.startsWith(value) : text.includes(value);
+        return mode === "exact"
+            ? text === value
+            : mode === "starts_with"
+            ? text.startsWith(value)
+            : text.includes(value);
     }
-    if (node.type === "condition") return text === value || String(input.interaction_id || "").toLowerCase() === value;
+
+    if (node.type === "condition") {
+        return (
+            interactionId === value ||
+            text === value ||
+            interactionTitle === value ||
+            (value && text.includes(value))
+        );
+    }
+
     return true;
 }
 
@@ -84,49 +130,189 @@ async function sendFlowMessage(connection, projectId, number, text, type = "text
 
 export async function handleFlowBuilder(projectId, number, input, messageUniqueId) {
     const connection = await pool.getConnection();
+    let flowAnswered = false;
+
     try {
-        const [[settings]] = await connection.query("SELECT flow_builder_enabled, active_flow_id FROM aisensy_projects WHERE project_id=? LIMIT 1", [projectId]);
-        if (!settings || settings.flow_builder_enabled !== "1" || !settings.active_flow_id) return false;
-        const [[flow]] = await connection.query("SELECT flow_id, published_json FROM flows WHERE flow_id=? AND project_id=? AND status='published' AND is_deleted='0' LIMIT 1", [settings.active_flow_id, projectId]);
+        const [[settings]] = await connection.query(
+            "SELECT flow_builder_enabled, active_flow_id FROM aisensy_projects WHERE project_id=? LIMIT 1",
+            [projectId]
+        );
+        if (!settings || settings.flow_builder_enabled !== "1" || !settings.active_flow_id) {
+            return false;
+        }
+
+        const [[flow]] = await connection.query(
+            "SELECT flow_id, published_json FROM flows WHERE flow_id=? AND project_id=? AND status='published' AND is_deleted='0' LIMIT 1",
+            [settings.active_flow_id, projectId]
+        );
         if (!flow) return false;
+
         const graph = parseJson(flow.published_json, null);
         if (!validateFlowGraph(graph).valid) return false;
-        const [[state]] = await connection.query("SELECT * FROM flow_conversations WHERE flow_id=? AND project_id=? AND number=? AND status='active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1", [flow.flow_id, projectId, number]);
+
+        // Check active conversation session
+        const [[state]] = await connection.query(
+            "SELECT * FROM flow_conversations WHERE flow_id=? AND project_id=? AND number=? AND status='active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1",
+            [flow.flow_id, projectId, number]
+        );
+
         let context = parseJson(state?.context_json, {});
-        let current = state?.current_node_id || graph.nodes.find((node) => node.type === "start")?.id;
-        let flowAnswered = false;
+        let current = null;
+        const rawText = String(input.text || "").trim().toLowerCase();
+
+        // 1. If user explicitly wants to restart menu/flow, clear previous state
+        const isResetKeyword = rawText === "menu" || rawText === "main menu" || rawText === "/start" || rawText === "/menu";
+
+        if (state && !isResetKeyword) {
+            current = state.current_node_id;
+        } else {
+            // No active state (or user typed menu). Only trigger new flow if explicit trigger
+            if (!isExplicitFlowStart(input, graph)) {
+                // Not a flow trigger -> Pass to AI Auto Reply
+                return false;
+            }
+            current = graph.nodes.find((node) => node.type === "start")?.id;
+        }
+
+        if (!current) {
+            return false;
+        }
+
         let steps = 0;
+        let pausedAtInteractive = false;
+
         while (current && steps++ < MAX_STEPS_PER_MESSAGE) {
             const node = graph.nodes.find((item) => String(item.id) === String(current));
-            if (!node) break;
-            if (["start", "keyword", "condition"].includes(node.type) && node.type !== "start" && !matches(node, input)) {
-                current = nextNode(graph, node.id, "fallback") || nextNode(graph, node.id, "false");
-                continue;
+            if (!node) {
+                current = null;
+                break;
             }
+
+            // Evaluation for condition / keyword nodes
+            if (["start", "keyword", "condition"].includes(node.type) && node.type !== "start") {
+                const isMatch = matches(node, input);
+                if (!isMatch) {
+                    const fallbackTarget = nextNode(graph, node.id, "fallback") || nextNode(graph, node.id, "false");
+                    if (fallbackTarget) {
+                        current = fallbackTarget;
+                        continue;
+                    } else {
+                        // Check if there are other sibling condition edges from the previous node
+                        break;
+                    }
+                }
+            }
+
             let action = node.type;
+
             if (node.type === "message") {
-                // Claim the message before sending. If the provider accepts it but a
-                // later state/log write fails, AI must not send a duplicate reply.
                 flowAnswered = true;
-                await sendFlowMessage(connection, projectId, number, String(node.data.text), node.data.interactive ? "interactive" : "text", node.data);
+                await sendFlowMessage(
+                    connection,
+                    projectId,
+                    number,
+                    String(node.data.text),
+                    node.data.interactive ? "interactive" : "text",
+                    node.data
+                );
+
+                // If message is interactive, we pause execution waiting for user's next input
+                if (node.data?.interactive) {
+                    pausedAtInteractive = true;
+                    // Next step will evaluate branches leading out of this message node
+                    const nextOut = outgoingEdges(graph, node.id);
+                    if (nextOut.length === 1 && !nextOut[0].sourceHandle) {
+                        current = nextOut[0].target;
+                    } else {
+                        // Keep current at this node or target branches
+                        current = node.id;
+                    }
+                    break;
+                }
             } else if (node.type === "set_context") {
                 context[String(node.data.key || "value")] = node.data.value;
             } else if (node.type === "end" || node.type === "stop") {
-                if (state) await connection.query("UPDATE flow_conversations SET status=?, updated_at=? WHERE id=?", [node.type === "stop" ? "paused" : "completed", TIMESTAMP(), state.id]);
-                await connection.query("INSERT INTO flow_execution_logs (flow_id,project_id,number,message_unique_id,node_id,action,input_json,output_json,status,create_date) VALUES (?,?,?,?,?,?,?,?,?,?)", [flow.flow_id, projectId, number, messageUniqueId, node.id, action, JSON.stringify(input), JSON.stringify(context), "success", TIMESTAMP()]);
+                if (state) {
+                    await connection.query(
+                        "UPDATE flow_conversations SET status=?, current_node_id=NULL, updated_at=? WHERE id=?",
+                        [node.type === "stop" ? "paused" : "completed", TIMESTAMP(), state.id]
+                    );
+                }
+                await connection.query(
+                    "INSERT INTO flow_execution_logs (flow_id,project_id,number,message_unique_id,node_id,action,input_json,output_json,status,create_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    [flow.flow_id, projectId, number, messageUniqueId, node.id, action, JSON.stringify(input), JSON.stringify(context), "success", TIMESTAMP()]
+                );
                 return flowAnswered;
             }
-            current = nextNode(graph, node.id, node.data?.nextHandle);
+
+            // Find next node in sequence
+            // If current node has multiple condition branches outgoing, check matching condition
+            const outEdges = outgoingEdges(graph, node.id);
+            if (outEdges.length > 1) {
+                let matchedNext = null;
+                for (const edge of outEdges) {
+                    const target = graph.nodes.find((n) => String(n.id) === String(edge.target));
+                    if (target && target.type === "condition" && matches(target, input)) {
+                        matchedNext = target.id;
+                        break;
+                    }
+                }
+                current = matchedNext || nextNode(graph, node.id, node.data?.nextHandle);
+            } else {
+                current = nextNode(graph, node.id, node.data?.nextHandle);
+            }
+
+            // If no next node is found after sending message
+            if (!current && node.type === "message" && !node.data?.interactive) {
+                // Reached end of sequence without explicit end node
+                if (state) {
+                    await connection.query(
+                        "UPDATE flow_conversations SET status='completed', current_node_id=NULL, updated_at=? WHERE id=?",
+                        [TIMESTAMP(), state.id]
+                    );
+                }
+                break;
+            }
         }
+
+        // If flow did not send any answer and could not match the user's input:
+        if (!flowAnswered) {
+            // Mark existing state as completed / handed off so user isn't trapped
+            if (state) {
+                await connection.query(
+                    "UPDATE flow_conversations SET status='completed', updated_at=? WHERE id=?",
+                    [TIMESTAMP(), state.id]
+                );
+            }
+            // Return false -> Allows AI Auto Reply to immediately handle the query
+            return false;
+        }
+
         const now = TIMESTAMP();
         const expires = new Date(Date.now() + FLOW_EXPIRY_HOURS * 3600000).toISOString().slice(0, 19).replace("T", " ");
-        if (state) await connection.query("UPDATE flow_conversations SET current_node_id=?, context_json=?, last_message_unique_id=?, updated_at=?, expires_at=? WHERE id=?", [current || null, JSON.stringify(context), messageUniqueId, now, expires, state.id]);
-        else await connection.query("INSERT INTO flow_conversations (flow_id,project_id,number,current_node_id,status,context_json,last_message_unique_id,started_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)", [flow.flow_id, projectId, number, current || null, "active", JSON.stringify(context), messageUniqueId, now, now, expires]);
-        await connection.query("INSERT INTO flow_execution_logs (flow_id,project_id,number,message_unique_id,node_id,action,input_json,output_json,status,create_date) VALUES (?,?,?,?,?,?,?,?,?,?)", [flow.flow_id, projectId, number, messageUniqueId, current || null, "message", JSON.stringify(input), JSON.stringify(context), "success", now]);
-        // An enabled flow that found no matching answer must not block AI fallback.
+
+        if (state) {
+            await connection.query(
+                "UPDATE flow_conversations SET current_node_id=?, context_json=?, last_message_unique_id=?, updated_at=?, expires_at=? WHERE id=?",
+                [current || null, JSON.stringify(context), messageUniqueId, now, expires, state.id]
+            );
+        } else {
+            await connection.query(
+                "INSERT INTO flow_conversations (flow_id,project_id,number,current_node_id,status,context_json,last_message_unique_id,started_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [flow.flow_id, projectId, number, current || null, "active", JSON.stringify(context), messageUniqueId, now, now, expires]
+            );
+        }
+
+        await connection.query(
+            "INSERT INTO flow_execution_logs (flow_id,project_id,number,message_unique_id,node_id,action,input_json,output_json,status,create_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            [flow.flow_id, projectId, number, messageUniqueId, current || null, "message", JSON.stringify(input), JSON.stringify(context), "success", now]
+        );
+
         return flowAnswered;
     } catch (error) {
         console.error("[FlowBuilder] execution failed:", error?.message || error);
         return flowAnswered;
-    } finally { connection.release(); }
+    } finally {
+        connection.release();
+    }
 }
