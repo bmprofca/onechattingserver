@@ -1,6 +1,6 @@
 // Standalone test script — run this directly with:  node testAutoReply.js
 // It calls the SAME provider logic your app uses, but prints everything
-// straight to your terminal so you don't need server logs at all.
+// straight to your terminal so you don't need server logs at all..
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI from "openai";
