@@ -105,8 +105,10 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
             }
             let action = node.type;
             if (node.type === "message") {
-                await sendFlowMessage(connection, projectId, number, String(node.data.text), node.data.interactive ? "interactive" : "text", node.data);
+                // Claim the message before sending. If the provider accepts it but a
+                // later state/log write fails, AI must not send a duplicate reply.
                 flowAnswered = true;
+                await sendFlowMessage(connection, projectId, number, String(node.data.text), node.data.interactive ? "interactive" : "text", node.data);
             } else if (node.type === "set_context") {
                 context[String(node.data.key || "value")] = node.data.value;
             } else if (node.type === "end" || node.type === "stop") {
@@ -125,6 +127,6 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
         return flowAnswered;
     } catch (error) {
         console.error("[FlowBuilder] execution failed:", error?.message || error);
-        return false;
+        return flowAnswered;
     } finally { connection.release(); }
 }
