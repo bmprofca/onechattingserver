@@ -60,17 +60,26 @@ async function sendFlowMessage(connection, projectId, number, text, type = "text
     const token = await GetAiSensyProjectToken(projectId);
     if (!token) throw new Error("Project messaging token is unavailable");
     const uniqueId = RANDOM_STRING(30);
-    const storedText = type === "interactive" ? `${text}\n\n${(options.items || []).map((v, i) => `${i + 1}. ${v.title || v}`).join("\n")}` : text;
-    await connection.query("INSERT INTO messages (unique_id, project_id, create_date, message_by, type, message_type, message, number, status, is_reply, reply_wamid) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [uniqueId, projectId, TIMESTAMP(), "FLOW_BUILDER", "out", "text", storedText, number, "pending", "0", null]);
-    const payload = type === "interactive" ? { to: number, type: "interactive", recipient_type: "individual", interactive: { type: "list", body: { text }, action: { button: options.button || "Choose an option", sections: [{ title: options.title || "Options", rows: (options.items || []).slice(0, 10).map((item, index) => ({ id: String(item.id || `option_${index + 1}`), title: String(item.title || item).slice(0, 24), description: item.description ? String(item.description).slice(0, 72) : undefined })) }] } } } : { to: number, type: "text", recipient_type: "individual", text: { body: text } };
+    const interactiveType = options.interactiveType === "button" ? "button" : "list";
+    const items = (options.items || []).slice(0, interactiveType === "button" ? 3 : 10).map((item, index) => ({
+        id: String(item.id || `option_${index + 1}`).slice(0, 200),
+        title: String(item.title || item).slice(0, 24),
+        ...(item.description ? { description: String(item.description).slice(0, 72) } : {})
+    }));
+    const interactive = interactiveType === "button"
+        ? { type: "button", body: { text }, action: { buttons: items.map(({ id, title }) => ({ type: "reply", reply: { id, title } })) } }
+        : { type: "list", body: { text }, action: { button: options.button || "Choose an option", sections: [{ title: options.title || "Options", rows: items }] } };
+    const payload = type === "interactive" ? { to: number, type: "interactive", recipient_type: "individual", interactive } : { to: number, type: "text", recipient_type: "individual", text: { body: text } };
+    const storedType = type === "interactive" ? "interactive" : "text";
+    await connection.query("INSERT INTO messages (unique_id, project_id, create_date, message_by, type, message_type, message, number, status, raw_json, is_reply, reply_wamid) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [uniqueId, projectId, TIMESTAMP(), "FLOW_BUILDER", "out", storedType, text, number, "pending", JSON.stringify(payload), "0", null]);
     try {
         const { data } = await axios.post("https://backend.aisensy.com/direct-apis/t1/messages", payload, { headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` } });
-        await connection.query("UPDATE messages SET wamid=?, status='sent', message_type=? WHERE unique_id=?", [data?.messages?.[0]?.id || null, type === "interactive" ? "interactive" : "text", uniqueId]);
+        await connection.query("UPDATE messages SET wamid=?, status='sent', message_type=?, raw_json=? WHERE unique_id=?", [data?.messages?.[0]?.id || null, storedType, JSON.stringify(payload), uniqueId]);
     } catch (error) {
         await connection.query("UPDATE messages SET status='failed', failed_reason=? WHERE unique_id=?", [error?.response?.data?.message || error.message || "Flow message failed", uniqueId]);
         throw error;
     }
-    await emitToProjectSockets(WsIo, projectId, "chat", { project_id: projectId, message: { message_id: uniqueId, message: storedText, type: "out", message_type: type, status: "sent", send_by: { username: "FLOW_BUILDER", name: "Flow Builder Bot", status: true } }, contact: { number } });
+    await emitToProjectSockets(WsIo, projectId, "chat", { project_id: projectId, message: { message_id: uniqueId, message: text, type: "out", message_type: storedType, status: "sent", interactive: type === "interactive" ? interactive : null, interactive_reply: null, send_by: { username: "FLOW_BUILDER", name: "Flow Builder Bot", status: true } }, contact: { number } });
 }
 
 export async function handleFlowBuilder(projectId, number, input, messageUniqueId) {
@@ -85,6 +94,7 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
         const [[state]] = await connection.query("SELECT * FROM flow_conversations WHERE flow_id=? AND project_id=? AND number=? AND status='active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1", [flow.flow_id, projectId, number]);
         let context = parseJson(state?.context_json, {});
         let current = state?.current_node_id || graph.nodes.find((node) => node.type === "start")?.id;
+        let flowAnswered = false;
         let steps = 0;
         while (current && steps++ < MAX_STEPS_PER_MESSAGE) {
             const node = graph.nodes.find((item) => String(item.id) === String(current));
@@ -96,12 +106,13 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
             let action = node.type;
             if (node.type === "message") {
                 await sendFlowMessage(connection, projectId, number, String(node.data.text), node.data.interactive ? "interactive" : "text", node.data);
+                flowAnswered = true;
             } else if (node.type === "set_context") {
                 context[String(node.data.key || "value")] = node.data.value;
             } else if (node.type === "end" || node.type === "stop") {
                 if (state) await connection.query("UPDATE flow_conversations SET status=?, updated_at=? WHERE id=?", [node.type === "stop" ? "paused" : "completed", TIMESTAMP(), state.id]);
                 await connection.query("INSERT INTO flow_execution_logs (flow_id,project_id,number,message_unique_id,node_id,action,input_json,output_json,status,create_date) VALUES (?,?,?,?,?,?,?,?,?,?)", [flow.flow_id, projectId, number, messageUniqueId, node.id, action, JSON.stringify(input), JSON.stringify(context), "success", TIMESTAMP()]);
-                return true;
+                return flowAnswered;
             }
             current = nextNode(graph, node.id, node.data?.nextHandle);
         }
@@ -110,7 +121,8 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
         if (state) await connection.query("UPDATE flow_conversations SET current_node_id=?, context_json=?, last_message_unique_id=?, updated_at=?, expires_at=? WHERE id=?", [current || null, JSON.stringify(context), messageUniqueId, now, expires, state.id]);
         else await connection.query("INSERT INTO flow_conversations (flow_id,project_id,number,current_node_id,status,context_json,last_message_unique_id,started_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)", [flow.flow_id, projectId, number, current || null, "active", JSON.stringify(context), messageUniqueId, now, now, expires]);
         await connection.query("INSERT INTO flow_execution_logs (flow_id,project_id,number,message_unique_id,node_id,action,input_json,output_json,status,create_date) VALUES (?,?,?,?,?,?,?,?,?,?)", [flow.flow_id, projectId, number, messageUniqueId, current || null, "message", JSON.stringify(input), JSON.stringify(context), "success", now]);
-        return true;
+        // An enabled flow that found no matching answer must not block AI fallback.
+        return flowAnswered;
     } catch (error) {
         console.error("[FlowBuilder] execution failed:", error?.message || error);
         return false;

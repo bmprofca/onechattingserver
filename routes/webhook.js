@@ -19,6 +19,7 @@ import {
 } from "../helpers/templateStorage.js";
 import { handleAutoReply } from "../helpers/autoReplyAgent.js";
 import { handleFlowBuilder } from "../helpers/flowBuilder.js";
+import { getInteractiveDisplayText, getInteractiveFromRawJson, getInteractiveFromWebhookMessage } from "../helpers/interactiveMessage.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -406,6 +407,11 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                 const wamid = message?.id;
                 const sender = message?.from;
 
+                if (wamid) {
+                    const [existingMessage] = await pool.query("SELECT unique_id FROM messages WHERE wamid = ? LIMIT 1", [wamid]);
+                    if (existingMessage.length > 0) continue;
+                }
+
                 // Auto-record user to qr_scanned_users table
                 const msgBody = message?.text?.body || message?.image?.caption || message?.video?.caption || "";
                 await __ensureScannedUserFromWebhook(project_id, sender, contactName, msgBody);
@@ -517,6 +523,18 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         "INSERT INTO `messages`(`unique_id`, `wamid`, `project_id`, `create_date`, `message_by`, `type`, `message_type`, `message`, `status`, `raw_json`,`number`,`is_forwarded`,`is_reply`,`reply_wamid`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         [unique_id, wamid, project_id, TIMESTAMP(), "WEBHOOK", "in", "text", msg, "received", raw_json, sender, is_forwarded, "1", reply_wamid]
                     );
+                } else if (messageType === "interactive") {
+                    const interactive = getInteractiveFromWebhookMessage(message);
+                    const reply = interactive?.reply;
+                    const msg = getInteractiveDisplayText(interactive, '');
+                    const reply_wamid = message?.context?.id || null;
+                    const is_forwarded = message?.context?.forwarded ? "1" : "0";
+                    const is_reply = reply_wamid ? "1" : "0";
+
+                    await pool.query(
+                        "INSERT INTO `messages`(`unique_id`, `wamid`, `project_id`, `create_date`, `message_by`, `type`, `message_type`, `message`, `status`, `raw_json`,`number`,`is_forwarded`,`is_reply`,`reply_wamid`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        [unique_id, wamid, project_id, TIMESTAMP(), "WEBHOOK", "in", "interactive", msg, "received", raw_json, sender, is_forwarded, is_reply, reply_wamid]
+                    );
                 }
 
                 // Emit chat (your original block unchanged, but now sequential)
@@ -604,6 +622,10 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         object.latitude = latitude;
                         object.longitude = longitude;
                         object.name = location_name;
+                    }
+                    if (message_type === "interactive") {
+                        object.interactive = getInteractiveFromRawJson(element.raw_json);
+                        object.interactive_reply = object.interactive?.reply || null;
                     }
 
                     // reply_to_message block (unchanged)
@@ -739,7 +761,9 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                             interaction_id: interactiveReply?.id || null,
                             interaction_title: interactiveReply?.title || message_msg || null,
                         }, unique_id);
-                        if (!flowHandled && message_type === 'text') {
+                        // Flow Builder has priority. If it did not send an answer, let AI handle
+                        // text and interactive selections (the selected title is message_msg).
+                        if (!flowHandled && String(message_msg || '').trim()) {
                             await handleAutoReply(project_id, number, message_msg, unique_id);
                         }
                     }
@@ -798,6 +822,10 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     return_message.is_voice = el.is_voice == "1";
                 }
                 if (is_reply && el.reply_wamid) return_message.reply_wamid = el.reply_wamid;
+                if (el.message_type === "interactive") {
+                    return_message.interactive = getInteractiveFromRawJson(el.raw_json);
+                    return_message.interactive_reply = return_message.interactive?.reply || null;
+                }
 
                 await emitToProjectSockets(WsIo, project_id, "chat", {
                     message: return_message,
@@ -907,6 +935,24 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                         }
                         didProcess = true;
                     }
+                } else if (messageType === "interactive") {
+                    const interactive = getInteractiveFromWebhookMessage(message);
+                    const msg = getInteractiveDisplayText(interactive, 'Interactive message');
+                    const is_forwarded = message?.context?.forwarded ? "1" : "0";
+                    const reply_wamid = message?.context?.id || null;
+                    const is_reply = reply_wamid ? "1" : "0";
+                    if (message_exists) {
+                        await pool.query(
+                            "UPDATE `messages` SET `message_type` = ?, `message` = ?, `raw_json` = ?, `number` = ?, `is_forwarded` = ?, `is_reply` = ?, `reply_wamid` = ? WHERE `wamid` = ?",
+                            ["interactive", msg, raw_json, recipient, is_forwarded, is_reply, reply_wamid, wamid]
+                        );
+                    } else {
+                        await pool.query(
+                            "INSERT INTO `messages`(`unique_id`, `wamid`, `project_id`, `create_date`, `message_by`, `type`, `message_type`, `message`, `status`, `raw_json`,`number`,`is_forwarded`,`is_reply`,`reply_wamid`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            [unique_id, wamid, project_id, TIMESTAMP(), admin_username, "out", "interactive", msg, "pending", raw_json, recipient, is_forwarded, is_reply, reply_wamid]
+                        );
+                    }
+                    didProcess = true;
                 } else if (messageType === "audio") {
                     const folder_path = GET_CHAT_MEDIA_KEY_PREFIX(project_id, recipient, 'audio');
                     const media_id = message?.audio?.id;

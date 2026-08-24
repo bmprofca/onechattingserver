@@ -916,42 +916,34 @@ async function sendInteractiveMessage(connection, project_id, projectToken, send
     const numberedOptions = options.map((opt, i) => `${i + 1}. ${opt}`).join("\n");
     const fullTextFallback = `${text}\n\n${numberedOptions}`;
 
-    await connection.query(
-        "INSERT INTO `messages`(`unique_id`, `project_id`, `create_date`, `message_by`, `type`, `message_type`, `message`, `number`, `status`, `is_reply`, `reply_wamid`) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        [unique_id, project_id, TIMESTAMP(), "BOT", "out", "text", fullTextFallback, sender, "pending", "0", null]
-    );
-
     let wamid = null;
     let status = "sent";
     let failed_reason = null;
     let usedInteractive = false;
+    const interactive = {
+        type: "list",
+        body: { text },
+        action: {
+            button: "Choose an option",
+            sections: [{
+                title: "Options",
+                rows: options.slice(0, 10).map((opt, i) => ({
+                    id: `option_${i + 1}`,
+                    title: opt.length > 24 ? opt.substring(0, 21) + "..." : opt,
+                    ...(opt.length > 24 ? { description: opt } : {})
+                }))
+            }]
+        }
+    };
+    const interactivePayload = { to: sender, type: "interactive", recipient_type: "individual", interactive };
+    await connection.query(
+        "INSERT INTO `messages`(`unique_id`, `project_id`, `create_date`, `message_by`, `type`, `message_type`, `message`, `number`, `status`, `raw_json`, `is_reply`, `reply_wamid`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        [unique_id, project_id, TIMESTAMP(), "BOT", "out", "interactive", text, sender, "pending", JSON.stringify(interactivePayload), "0", null]
+    );
 
     // Try sending as WhatsApp interactive list message first
     if (options.length <= 10) {
         try {
-            const interactivePayload = {
-                to: sender,
-                type: "interactive",
-                recipient_type: "individual",
-                interactive: {
-                    type: "list",
-                    body: { text },
-                    action: {
-                        button: "Choose an option",
-                        sections: [
-                            {
-                                title: "Options",
-                                rows: options.map((opt, i) => ({
-                                    id: `option_${i + 1}`,
-                                    title: opt.length > 24 ? opt.substring(0, 21) + "..." : opt,
-                                    description: opt.length > 24 ? opt : undefined,
-                                })),
-                            },
-                        ],
-                    },
-                },
-            };
-
             const { data } = await axios.request({
                 method: "POST",
                 url: "https://backend.aisensy.com/direct-apis/t1/messages",
@@ -965,7 +957,7 @@ async function sendInteractiveMessage(connection, project_id, projectToken, send
 
             wamid = data?.messages?.[0]?.id;
             usedInteractive = true;
-            await connection.query("UPDATE `messages` SET `wamid` = ?, `message_type` = 'interactive' WHERE `unique_id` = ?", [wamid, unique_id]);
+            await connection.query("UPDATE `messages` SET `wamid` = ?, `message_type` = 'interactive', `message` = ?, `raw_json` = ? WHERE `unique_id` = ?", [wamid, text, JSON.stringify(interactivePayload), unique_id]);
             console.log(`[AutoReply] Sent interactive list message to ${sender}`);
         } catch (interactiveError) {
             console.warn(`[AutoReply] Interactive message failed, falling back to text:`, interactiveError?.response?.data?.message || interactiveError?.message);
@@ -993,7 +985,8 @@ async function sendInteractiveMessage(connection, project_id, projectToken, send
             });
 
             wamid = data?.messages?.[0]?.id;
-            await connection.query("UPDATE `messages` SET `wamid` = ? WHERE `unique_id` = ?", [wamid, unique_id]);
+            const fallbackPayload = { to: sender, type: "text", recipient_type: "individual", text: { body: fullTextFallback } };
+            await connection.query("UPDATE `messages` SET `wamid` = ?, `message_type` = 'text', `message` = ?, `raw_json` = ? WHERE `unique_id` = ?", [wamid, fullTextFallback, JSON.stringify(fallbackPayload), unique_id]);
         } catch (apiError) {
             console.error("AiSensy API error sending interactive fallback:", apiError?.response?.data || apiError.message);
             status = "failed";
@@ -1022,6 +1015,7 @@ async function sendInteractiveMessage(connection, project_id, projectToken, send
             status: newMsg.status,
             type: "out",
             message_type: newMsg.message_type || "text",
+            ...(usedInteractive ? { interactive, interactive_reply: null } : {}),
             id: newMsg.id,
             send_by: {
                 username: "BOT",

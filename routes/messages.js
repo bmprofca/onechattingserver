@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Decrypt } from "../helpers/Decrypt.js";
+import { validateInteractivePayload } from "../helpers/interactiveMessage.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { WsIo } from "../server.js";
 import moment from "moment";
@@ -16,6 +17,7 @@ import {
     loadTemplateFromDb,
     parseMessageComponent,
 } from "../helpers/templateStorage.js";
+import { getInteractiveFromRawJson } from "../helpers/interactiveMessage.js";
 
 const router = express.Router();
 
@@ -357,6 +359,10 @@ router.post("/chat-history", auth, async (req, res) => {
                 object.longitude = longitude;
                 object.name = location_name;
             }
+            if (message_type == 'interactive') {
+                object.interactive = getInteractiveFromRawJson(element.raw_json);
+                object.interactive_reply = object.interactive?.reply || null;
+            }
 
             if (message_type == 'template') {
                 var storedTemplate = await loadTemplateFromDb(project_id, template_id);
@@ -462,6 +468,10 @@ router.post("/chat-history", auth, async (req, res) => {
                             reply_object.longitude = reply_element.longitude;
                             reply_object.name = reply_element.location_name;
                         }
+                        if (reply_element.message_type == 'interactive') {
+                            reply_object.interactive = getInteractiveFromRawJson(reply_element.raw_json);
+                            reply_object.interactive_reply = reply_object.interactive?.reply || null;
+                        }
 
                         if (reply_element.message_type == 'template') {
                             var reply_stored = await loadTemplateFromDb(project_id, reply_element.template_id);
@@ -548,6 +558,76 @@ router.post("/check-chat-window", auth, async (req, res) => {
     })
 
 
+});
+
+router.post("/send-interactive-message", auth, async (req, res) => {
+    const data = req.body?.data || '';
+    const key = req.body?.key || '';
+    const decrypt = Decrypt(data, key);
+    if (!decrypt) return res.status(200).json({ error: 'Failed to decrypt data' });
+
+    const username = req.headers["username"] || '';
+    const { project_id, number, interactive, is_reply = false, reply_wamid = null } = decrypt;
+    const validationError = validateInteractivePayload(interactive);
+    if (!project_id || !number || validationError) return res.status(200).json({ error: validationError || 'Provide project_id, number, and interactive' });
+    if (is_reply && !reply_wamid) return res.status(200).json({ error: 'reply_wamid is required when is_reply is true' });
+    if (!await CheckUserProjectMaping(username, project_id)) return res.status(200).json({ error: 'User is not assigned on the project' });
+    if (!await CheckProjectValidity(project_id)) return res.status(200).json({ error: 'Project subscription is expired' });
+
+    const project_token = await GetAiSensyProjectToken(project_id);
+    if (!project_token) return res.status(200).json({ error: 'Failed to get project token' });
+
+    const unique_id = RANDOM_STRING(30);
+    const displayText = interactive.body?.text || interactive.action?.buttons?.[0]?.reply?.title || 'Interactive message';
+    const rawInteractive = JSON.stringify({ type: 'interactive', interactive });
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [assigned] = await connection.query("SELECT username FROM chat_assigned WHERE project_id = ? AND number = ? ORDER BY id DESC LIMIT 1", [project_id, number]);
+        if (assigned.length && assigned[0].username !== username) {
+            await connection.rollback(); connection.release();
+            return res.status(200).json({ error: 'You are not assigned to this number' });
+        }
+
+        await connection.query(
+            "INSERT INTO messages (unique_id, project_id, create_date, message_by, type, message_type, message, number, status, raw_json, is_reply, reply_wamid) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            [unique_id, project_id, TIMESTAMP(), username, 'out', 'interactive', displayText, number, 'pending', rawInteractive, is_reply ? '1' : '0', reply_wamid]
+        );
+
+        const apiPayload = {
+            to: number,
+            type: 'interactive',
+            recipient_type: 'individual',
+            interactive,
+            ...(is_reply && reply_wamid ? { context: { message_id: reply_wamid } } : {})
+        };
+        const { data: apiResponse } = await axios.post('https://backend.aisensy.com/direct-apis/t1/messages', apiPayload, {
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json, application/xml', Authorization: `Bearer ${project_token}` }
+        });
+        const wamid = apiResponse?.messages?.[0]?.id;
+        if (!wamid) throw new Error('WhatsApp did not return a message id');
+        await connection.query("UPDATE messages SET wamid = ?, status = 'sent' WHERE unique_id = ?", [wamid, unique_id]);
+        await connection.commit();
+        connection.release();
+        connection = null;
+
+        const [userRows] = await pool.query("SELECT * FROM users WHERE username = ?", [username]);
+        const user = userRows[0] || {};
+        const returnMessage = {
+            wamid, message_id: unique_id, message: displayText, create_date: TIMESTAMP(), type: 'out', message_type: 'interactive',
+            status: 'sent', is_template: false, is_forwarded: false, is_reply: Boolean(is_reply), id: null,
+            interactive, interactive_reply: null,
+            ...(is_reply && reply_wamid ? { reply_wamid } : {}),
+            send_by: { username: user.username, name: user.name, mobile: `${user.country_code || ''}${user.mobile || ''}`, email: user.email, status: user.status === '1' }
+        };
+        const [rooms] = await pool.query("SELECT username FROM project_mapping WHERE project_id = ? AND is_deleted = '0'", [project_id]);
+        for (const room of rooms) WsIo.to(room.username).emit('chat', { message: returnMessage, project_id, contact: { number } });
+        return res.status(200).json({ error: false, ...returnMessage });
+    } catch (error) {
+        if (connection) { await connection.rollback().catch(() => {}); connection.release(); }
+        return res.status(200).json({ error: error?.response?.data?.message || error.message || 'Failed to send interactive message' });
+    }
 });
 
 router.post("/send-text-message", auth, async (req, res) => {
