@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { startCampaignScheduler } from "../helpers/campaign/scheduler.js";
 import { stopExpiredProjectBilling } from "../helpers/aisensyBilling.js";
 import { generateAiBills } from "../cron/aiBilling.js";
+import { processDailyWishes } from "../cron/birthdayAnniversaryWish.js";
 
 const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
@@ -19,6 +20,16 @@ const schedule = (expression, fn, options = {}) => {
 
 export function startCronJobs() {
     startCampaignScheduler();
+
+    // Daily 12:01 AM (Asia/Kolkata): Send birthday & anniversary wishes to qr_scanned_users
+    schedule("1 0 * * *", async () => {
+        try {
+            console.log("[cron] Running daily birthday & anniversary wish job at 12:01 AM IST");
+            await processDailyWishes();
+        } catch (error) {
+            console.error("[cron] processDailyWishes error:", error?.message || error);
+        }
+    });
 
     // Daily: stop AiSensy billing for expired packages only
     if (BILLING_EXPIRY_CRON_ENABLED) {
