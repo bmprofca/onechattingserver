@@ -1,7 +1,7 @@
 import express from "express";
 import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
-import { GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
+import { GetAiSensyProjectToken, GET_BALANCE_BY_USERNAME, GET_ADMIN_OF_PROJECT, RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
 import axios from "axios";
 import { Decrypt } from "../helpers/Decrypt.js";
 import {
@@ -499,6 +499,51 @@ router.post("/template-edit", auth, async (req, res) => {
     }
 });
 
+// GET AI STATUS & WALLET / KEY ELIGIBILITY
+router.post("/get-ai-status", auth, async (req, res) => {
+    const data = req.body?.data || '';
+    const key = req.body?.key || '';
+    const decrypt = Decrypt(data, key);
+    if (!decrypt) return res.status(200).json({ error: 'Failed to decrypt data' });
+
+    const username = req.headers["username"] || '';
+    const project_id = decrypt?.project_id;
+    if (!project_id) return res.status(200).json({ error: 'project_id is required' });
+
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    try {
+        const config = await resolveAiProviderConfig(pool, project_id);
+        const isPersonalKey = config?.source === 'project_personal_key';
+
+        const projectAdmin = await GET_ADMIN_OF_PROJECT(project_id);
+        const ownerUsername = projectAdmin || username;
+        const balance = await GET_BALANCE_BY_USERNAME(ownerUsername);
+        const numBalance = Number(balance) || 0;
+
+        const isEligible = isPersonalKey || numBalance > 100;
+
+        return res.status(200).json({
+            error: false,
+            data: {
+                has_key: Boolean(config?.apiKey),
+                source: config?.source || 'none',
+                is_personal_key: isPersonalKey,
+                provider: config?.provider || null,
+                model: config?.model || null,
+                balance: numBalance,
+                is_eligible: isEligible,
+                min_balance_required: 100,
+            }
+        });
+    } catch (err) {
+        console.error('Error fetching AI status:', err);
+        return res.status(200).json({ error: err.message || 'Failed to fetch AI status' });
+    }
+});
+
 // GENERATE AI TEMPLATE
 router.post("/generate-ai-template", auth, async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
@@ -515,6 +560,7 @@ router.post("/generate-ai-template", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;
     const prompt = decrypt?.prompt || decrypt?.description || '';
+    const header_prompt = decrypt?.header_prompt || '';
     const category = decrypt?.category || 'MARKETING';
     const language = decrypt?.language || 'en';
     const tone = decrypt?.tone || 'friendly and engaging';
@@ -531,6 +577,25 @@ router.post("/generate-ai-template", auth, async (req, res) => {
         return res.status(200).json({ error: 'User is not assigned on the project' });
     }
 
+    // Resolve AI configuration to check if personal key or platform key is used
+    const config = await resolveAiProviderConfig(pool, project_id);
+    if (!config?.apiKey) {
+        return res.status(200).json({ error: 'No active AI API key found. Please configure a platform AI key or project personal key.' });
+    }
+
+    // Wallet balance check — only required if NOT using a personal key
+    if (config.source !== 'project_personal_key') {
+        const projectAdmin = await GET_ADMIN_OF_PROJECT(project_id);
+        const ownerUsername = projectAdmin || username;
+        const balance = await GET_BALANCE_BY_USERNAME(ownerUsername);
+
+        if (Number(balance) <= 100) {
+            return res.status(200).json({
+                error: 'AI Template generation requires a minimum wallet balance of ₹100 or your own personal AI API key.'
+            });
+        }
+    }
+
     try {
         const result = await generateWhatsAppTemplateWithAi({
             projectId: project_id,
@@ -539,6 +604,7 @@ router.post("/generate-ai-template", auth, async (req, res) => {
             language,
             tone,
             headerType: header_type,
+            headerPrompt: header_prompt,
             buttonType: button_type,
             customInstructions: custom_instructions,
         });
@@ -585,13 +651,30 @@ router.post("/generate-ai-header-media", auth, async (req, res) => {
         if (!config?.apiKey || !['openai', 'gemini'].includes(config.provider)) {
             return res.status(200).json({ error: 'AI header media requires an active OpenAI or Gemini project key' });
         }
+
+        // Wallet balance check — only required if NOT using a personal key
+        if (config.source !== 'project_personal_key') {
+            const projectAdmin = await GET_ADMIN_OF_PROJECT(project_id);
+            const ownerUsername = projectAdmin || username;
+            const balance = await GET_BALANCE_BY_USERNAME(ownerUsername);
+
+            if (Number(balance) <= 100) {
+                return res.status(200).json({
+                    error: 'AI Header generation requires a minimum wallet balance of ₹100 or your own personal AI API key.'
+                });
+            }
+        }
+
         const media = await generateTemplateHeaderMedia({
             apiKey: config.apiKey,
             provider: config.provider,
             format,
             prompt: decrypt?.prompt,
+            headerPrompt: decrypt?.header_prompt,
             body: decrypt?.body,
             headerText: decrypt?.header_text,
+            referenceImageUrl: decrypt?.reference_image_url || decrypt?.reference_image || decrypt?.logo_url,
+            referenceImageBuffer: decrypt?.reference_image_buffer,
         });
         return res.status(200).json({ error: false, data: media });
     } catch (error) {

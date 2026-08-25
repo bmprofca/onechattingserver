@@ -406,6 +406,7 @@ export async function generateWhatsAppTemplateWithAi({
     language = "en",
     tone = "friendly and persuasive",
     headerType = null,
+    headerPrompt = null,
     buttonType = null,
     customInstructions = "",
 }) {
@@ -428,14 +429,18 @@ export async function generateWhatsAppTemplateWithAi({
     // 2. Build prompts
     const systemPrompt = buildTemplateSystemPrompt();
     let userPrompt = `Generate a WhatsApp Template based on the following requirements:
-- Use-case / Prompt: "${prompt}"
+- Use-case / Description Prompt: "${prompt}"
 - Category: ${category || "MARKETING"}
 - Language: ${language || "en"}
 - Tone: ${tone || "friendly and engaging"}
 `;
 
     if (headerType && headerType !== "NONE") {
-        userPrompt += `- Header Preference: Include a ${headerType.toUpperCase()} header.\n`;
+        userPrompt += `- Header Preference: Include a ${headerType.toUpperCase()} header.`;
+        if (headerPrompt && headerPrompt.trim()) {
+            userPrompt += ` Header Visual/Text Requirement: "${headerPrompt.trim()}".`;
+        }
+        userPrompt += `\n`;
     } else if (headerType === "NONE") {
         userPrompt += `- Header Preference: Do NOT include a header component.\n`;
     }
@@ -460,15 +465,17 @@ export async function generateWhatsAppTemplateWithAi({
         userPrompt,
     });
 
-    // 4. Log AI usage
-    await logAiUsage(pool, {
-        projectId,
-        provider,
-        model,
-        callType: "template_gen",
-        inputTokens: result.usage?.inputTokens || 0,
-        outputTokens: result.usage?.outputTokens || 0,
-    });
+    // 4. Log AI usage ONLY when using platform key (skip if user configured their own personal key)
+    if (aiConfig.source !== "project_personal_key") {
+        await logAiUsage(pool, {
+            projectId: aiConfig.projectUniqueId || projectId,
+            provider,
+            model,
+            callType: "template_gen",
+            inputTokens: result.usage?.inputTokens || 0,
+            outputTokens: result.usage?.outputTokens || 0,
+        });
+    }
 
     // 5. Parse and Normalize
     const parsed = parseAiJsonResponse(result.text);

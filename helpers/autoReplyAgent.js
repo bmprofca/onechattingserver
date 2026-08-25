@@ -745,14 +745,16 @@ async function getOrGenerateContextGuide(connection, projectUniqueId, context, e
     const guideResult = await generateContextGuide(providerConfig.apiKey, providerConfig.provider, providerConfig.model, context);
     if (!guideResult) return null;
 
-    await logAiUsage(connection, {
-        projectId: projectUniqueId,
-        messageUniqueId: null,
-        provider: guideResult.provider,
-        model: guideResult.model,
-        callType: "guide",
-        usage: guideResult.usage,
-    });
+    if (providerConfig?.source !== "project_personal_key") {
+        await logAiUsage(connection, {
+            projectId: projectUniqueId,
+            messageUniqueId: null,
+            provider: guideResult.provider,
+            model: guideResult.model,
+            callType: "guide",
+            usage: guideResult.usage,
+        });
+    }
 
     await connection.query(
         "INSERT INTO project_context_guides (project_unique_id, guide_text, context_hash) VALUES (?, ?, ?) " +
@@ -787,6 +789,7 @@ async function resolveProviderConfig(connection, projectUniqueId, agentUsePerson
                 apiKey: keyRows[0].api_key,
                 provider: PROVIDER_HANDLERS[provider] ? provider : "gemini",
                 model: null, // model is always the default for the provider
+                source: "project_personal_key",
             };
         }
 
@@ -805,6 +808,7 @@ async function resolveProviderConfig(connection, projectUniqueId, agentUsePerson
             apiKey: platformKeyRows[0].api_key,
             provider: PROVIDER_HANDLERS[provider] ? provider : "gemini",
             model: null,
+            source: "platform_global_key",
         };
     }
 
@@ -1197,17 +1201,18 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
             replyText = result.replyText;
             isUnclear = result.isUnclear;
 
-            // Log token usage for this customer message's AI call(s) — used by
-            // the daily billing job (aiBilling.js) to charge per-token + 10%
-            // platform markup instead of a flat per-message rate.
-            await logAiUsage(connection, {
-                projectId: projectUniqueId,
-                messageUniqueId: incomingUniqueId,
-                provider: result.provider,
-                model: result.model,
-                callType: "reply",
-                usage: result.usage,
-            });
+            // Log token usage for this customer message's AI call(s) ONLY if using platform key —
+            // if user has their own personal key, do not record tokens or bill them.
+            if (providerConfig?.source !== "project_personal_key") {
+                await logAiUsage(connection, {
+                    projectId: projectUniqueId,
+                    messageUniqueId: incomingUniqueId,
+                    provider: result.provider,
+                    model: result.model,
+                    callType: "reply",
+                    usage: result.usage,
+                });
+            }
         }
 
         console.log(`[AutoReply] Final reply for project ${project_id}: "${replyText}"`);

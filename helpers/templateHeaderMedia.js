@@ -39,24 +39,71 @@ async function uploadBuffer(buffer, filename, contentType) {
     return response.data.url;
 }
 
-async function generateImage({ apiKey, provider, prompt }) {
+async function fetchImageBuffer(urlOrBase64) {
+    if (!urlOrBase64) return null;
+    if (urlOrBase64.startsWith("data:")) {
+        const base64Data = urlOrBase64.split(",")[1] || urlOrBase64;
+        const mimeMatch = urlOrBase64.match(/^data:([^;]+);base64,/);
+        return {
+            buffer: Buffer.from(base64Data, "base64"),
+            mimeType: mimeMatch ? mimeMatch[1] : "image/png"
+        };
+    }
+    if (urlOrBase64.startsWith("http://") || urlOrBase64.startsWith("https://")) {
+        const resp = await axios.get(urlOrBase64, { responseType: "arraybuffer" });
+        return {
+            buffer: Buffer.from(resp.data),
+            mimeType: resp.headers["content-type"] || "image/png"
+        };
+    }
+    return null;
+}
+
+async function generateImage({ apiKey, provider, prompt, referenceImageUrl, referenceImageBuffer }) {
     if (!apiKey) throw new Error("An active AI project key is required to generate header media");
+    
+    // Fetch reference image if provided
+    let refImage = null;
+    if (referenceImageBuffer) {
+        refImage = {
+            buffer: Buffer.isBuffer(referenceImageBuffer) ? referenceImageBuffer : Buffer.from(referenceImageBuffer, "base64"),
+            mimeType: "image/png"
+        };
+    } else if (referenceImageUrl) {
+        try {
+            refImage = await fetchImageBuffer(referenceImageUrl);
+        } catch (e) {
+            console.warn("[templateHeaderMedia] Failed to fetch reference image:", e.message);
+        }
+    }
+
     if (provider === "gemini") {
         const configuredModel = process.env.GEMINI_IMAGE_MODEL;
         const models = configuredModel ? [configuredModel] : ["gemini-2.5-flash-image", "gemini-3.1-flash-image"];
         let lastError;
         for (const model of models) {
             try {
+                const parts = [];
+                if (refImage?.buffer) {
+                    parts.push({
+                        inlineData: {
+                            mimeType: refImage.mimeType || "image/png",
+                            data: refImage.buffer.toString("base64")
+                        }
+                    });
+                }
+                parts.push({ text: prompt });
+
                 const response = await axios.post(
                     `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent`,
                     {
-                        contents: [{ parts: [{ text: prompt }] }],
+                        contents: [{ parts }],
                         generationConfig: { responseModalities: ["IMAGE"] },
                     },
                     { headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" } },
                 );
-                const parts = response.data?.candidates?.[0]?.content?.parts || [];
-                const imagePart = parts.find((part) => part.inlineData?.data || part.inline_data?.data);
+                const resParts = response.data?.candidates?.[0]?.content?.parts || [];
+                const imagePart = resParts.find((part) => part.inlineData?.data || part.inline_data?.data);
                 const imageData = imagePart?.inlineData?.data || imagePart?.inline_data?.data;
                 if (imageData) return Buffer.from(imageData, "base64");
                 lastError = new Error(`Gemini model ${model} did not return an image`);
@@ -85,11 +132,24 @@ async function createVideo(imageBuffer, directory, filename) {
     return fs.readFile(output);
 }
 
-export async function generateTemplateHeaderMedia({ apiKey, provider, format, prompt, body, headerText }) {
+export async function generateTemplateHeaderMedia({ apiKey, provider, format, prompt, headerPrompt, body, headerText, referenceImageUrl, referenceImageBuffer }) {
     const normalizedFormat = String(format || "").toUpperCase();
     if (!["IMAGE", "VIDEO", "DOCUMENT"].includes(normalizedFormat)) throw new Error("Unsupported header media format");
-    const visualPrompt = `Create a clean, brand-safe WhatsApp header visual related to: ${prompt}. Message context: ${body || headerText || "customer communication"}. No readable text, no logos, no watermarks, centered composition, suitable for a business message.`;
-    const imageBuffer = await generateImage({ apiKey, provider, prompt: visualPrompt });
+    
+    const visualSubject = headerPrompt || prompt;
+    let visualPrompt = `Create a clean, brand-safe WhatsApp header visual related to: ${visualSubject}. Message context: ${body || headerText || "customer communication"}. Centered composition, high aesthetic appeal, suitable for a WhatsApp business message header.`;
+    if (referenceImageUrl || referenceImageBuffer) {
+        visualPrompt += ` Seamlessly integrate and reference the provided logo / reference branding into the header image aesthetic, keeping the branding prominent and clean.`;
+    }
+
+    const imageBuffer = await generateImage({
+        apiKey,
+        provider,
+        prompt: visualPrompt,
+        referenceImageUrl,
+        referenceImageBuffer
+    });
+
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "template-header-"));
     try {
         if (normalizedFormat === "IMAGE") return { url: await uploadBuffer(imageBuffer, "ai-header.png", "image/png"), filename: "ai-header.png", mime_type: "image/png" };
@@ -97,9 +157,10 @@ export async function generateTemplateHeaderMedia({ apiKey, provider, format, pr
             const video = await createVideo(imageBuffer, directory, "ai-header.mp4");
             return { url: await uploadBuffer(video, "ai-header.mp4", "video/mp4"), filename: "ai-header.mp4", mime_type: "video/mp4" };
         }
-        const document = createPdf([headerText || "AI generated header", "", ...String(body || prompt).match(/.{1,78}(?:\s|$)/g)?.slice(0, 18) || []]);
+        const document = createPdf([headerText || "AI generated header", "", ...String(body || visualSubject).match(/.{1,78}(?:\s|$)/g)?.slice(0, 18) || []]);
         return { url: await uploadBuffer(document, "ai-header.pdf", "application/pdf"), filename: "ai-header.pdf", mime_type: "application/pdf" };
     } finally {
         await fs.rm(directory, { recursive: true, force: true });
     }
 }
+

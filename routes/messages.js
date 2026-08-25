@@ -2680,7 +2680,11 @@ router.post("/open-case-list", auth, async (req, res) => {
                     website: contactMap.get(num).website,
                     remark: contactMap.get(num).remark
                 } : null,
-                cases: caseDetails
+                cases: caseDetails,
+                // The list is grouped by contact number. Expose the newest open
+                // case explicitly so clients do not need to duplicate sorting
+                // logic just to render the current case summary.
+                latest_case: caseDetails[0] || null
             });
         }
 

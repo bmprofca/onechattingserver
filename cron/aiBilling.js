@@ -205,7 +205,7 @@ export async function generateAiBills() {
             );
         }
 
-        console.log(`[aiBilling] Completed AI billing for ${billDateStr}.`);
+        console.log(`[aiBilling] Completed AI billing for window: ${windowKey}.`);
     } catch (error) {
         console.error("[aiBilling] Error generating AI bills:", error);
     } finally {
