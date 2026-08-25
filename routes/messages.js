@@ -2532,6 +2532,10 @@ router.post("/open-case-list", auth, async (req, res) => {
         const limit = Math.min(Math.max(Number(decrypt?.limit) || 10, 1), 100);
         const offset = (page_no - 1) * limit;
         const search = (decrypt?.search ?? '').toString().trim();
+        const caseNameFilter = (decrypt?.case_name_filter ?? '').toString().trim();
+        const knownCaseNames = Array.isArray(decrypt?.known_case_names)
+            ? [...new Set(decrypt.known_case_names.map((name) => String(name || '').trim()).filter(Boolean))]
+            : [];
 
         if (!project_id) {
             return res.status(200).json({ error: 'Provide all mandatory fields: project_id' });
@@ -2545,6 +2549,11 @@ router.post("/open-case-list", auth, async (req, res) => {
         // Build search-aware filters
         // We want to search across case fields and contact fields (if contact exists)
         const hasSearch = !!search;
+        const caseNameWhere = caseNameFilter.toLowerCase() === 'others' && knownCaseNames.length > 0
+            ? ` AND COALESCE(c.name, '') NOT IN (${knownCaseNames.map(() => '?').join(',')})`
+            : caseNameFilter && caseNameFilter.toLowerCase() !== 'others'
+                ? ' AND c.name = ?'
+                : '';
         const baseWhere = hasSearch
             ? `WHERE c.project_id = ? AND c.status = '0' AND (
                     c.number LIKE ? OR
@@ -2556,14 +2565,23 @@ router.post("/open-case-list", auth, async (req, res) => {
                     ct.firm_name LIKE ? OR
                     ct.website LIKE ? OR
                     ct.remark LIKE ?
-                )`
-            : `WHERE c.project_id = ? AND c.status = '0'`;
+                )${caseNameWhere}`
+            : `WHERE c.project_id = ? AND c.status = '0'${caseNameWhere}`;
+
+        const appendCaseNameParams = (params) => {
+            if (caseNameFilter.toLowerCase() === 'others' && knownCaseNames.length > 0) {
+                params.push(...knownCaseNames);
+            } else if (caseNameFilter && caseNameFilter.toLowerCase() !== 'others') {
+                params.push(caseNameFilter);
+            }
+        };
 
         const countParams = [project_id];
         if (hasSearch) {
             const like = `%${search}%`;
             countParams.push(like, like, like, like, like, like, like, like, like);
         }
+        appendCaseNameParams(countParams);
 
         // Count distinct numbers that have at least one open case, with optional search
         const [[{ total }]] = await pool.query(
@@ -2583,6 +2601,7 @@ router.post("/open-case-list", auth, async (req, res) => {
             const like = `%${search}%`;
             listParams.push(like, like, like, like, like, like, like, like, like);
         }
+        appendCaseNameParams(listParams);
         listParams.push(limit, offset);
 
         // Get paginated list of numbers with at least one open case, ordered by latest case id desc, with optional search
