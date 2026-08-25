@@ -41,57 +41,35 @@ router.post("/chat-list", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt.project_id;
 
-    // NOTE: frontend sends `page`, not `page_no` â€” accept both so pagination
-    // actually works instead of silently defaulting to page 1 every time.
-    var page_no = Number(decrypt.page_no || decrypt.page || 1);
-    var search = decrypt.search || '';
-
-    // NOTE: frontend sends the active tab under `filter`, `filter_type`, AND
-    // `type` (all the same value) â€” read whichever is present.
+    var page_no = Math.max(1, parseInt(decrypt.page_no || decrypt.page, 10) || 1);
+    var limit = Math.max(1, parseInt(decrypt.limit, 10) || 30);
+    var offset = (page_no - 1) * limit;
+    var search = (decrypt.search || decrypt.query || '').trim();
     var filter = decrypt.filter || decrypt.filter_type || decrypt.type || 'all';
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
-        return res.status(200).json({ error: 'User is not assigned on the project' })
+        return res.status(200).json({ error: 'User is not assigned on the project' });
     }
 
-    const limit = 100;
-    const offset = (page_no - 1) * limit;
-
-    let queryArgs = [username, project_id];
+    let baseArgs = [username, project_id];
     let searchCondition = "";
     if (search) {
         searchCondition = " AND (contacts.name LIKE ? OR m.number LIKE ?) ";
         const searchPattern = `%${search}%`;
-        queryArgs.push(searchPattern, searchPattern);
+        baseArgs.push(searchPattern, searchPattern);
     }
 
-    // Build the HAVING clause for filters that depend on computed/aggregated
-    // columns (unread_count, is_favorite). These can't go in WHERE because
-    // they're derived after the GROUP BY.
     let havingCondition = "";
     if (filter === 'unread') {
         havingCondition = " HAVING unread_count > 0 ";
     } else if (filter === 'favourites') {
         havingCondition = " HAVING is_favorite = 'yes' ";
     } else if (filter === 'assigned') {
-        // TODO: "assigned" needs a real assignment source â€” there's no
-        // assigned-agent column in this query yet. Once you have one
-        // (e.g. a `contacts.assigned_to` column or a separate
-        // `chat_assignments` table), wire it in here, e.g.:
-        //   havingCondition = " HAVING assigned_to = ? ";
-        //   queryArgs.push(username); // add BEFORE offset/limit below
-        // Left as a no-op filter for now so it doesn't silently 500.
-        havingCondition = "";
+        havingCondition = " HAVING is_assigned = 'yes' ";
     }
 
-    queryArgs.push(offset, limit);
-
-    var [rows] = await pool.query(
-        "SELECT m.*, contacts.name, " +
-        "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
-        "(SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, " +
-        "COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count " +
+    const baseQuery = 
         "FROM messages m " +
         "INNER JOIN (SELECT project_id, number, MAX(id) AS last_id FROM messages GROUP BY project_id, number) AS last_msg " +
         "ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id " +
@@ -99,16 +77,39 @@ router.post("/chat-list", auth, async (req, res) => {
         "LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' " +
         "WHERE m.project_id = ? " + searchCondition +
         " GROUP BY m.id, contacts.name " +
-        havingCondition +
-        " ORDER BY last_msg.last_id DESC LIMIT ?, ?",
-        queryArgs
-    );
+        havingCondition;
 
+    const countSql = "SELECT COUNT(*) AS total FROM (" +
+        "SELECT m.id, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number AND ca.username = ?) THEN 'yes' ELSE 'no' END AS is_assigned, " +
+        "COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count " +
+        baseQuery +
+        ") AS total_subquery";
+
+    const dataSql = 
+        "SELECT m.*, contacts.name, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number AND ca.username = ?) THEN 'yes' ELSE 'no' END AS is_assigned, " +
+        "(SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, " +
+        "COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count " +
+        baseQuery +
+        " ORDER BY last_msg.last_id DESC LIMIT ?, ?";
+
+    let countArgs = [username, username, ...baseArgs.slice(1)];
+    let dataArgs = [username, username, ...baseArgs.slice(1), offset, limit];
+
+    const [[countRows], [rows]] = await Promise.all([
+        pool.query(countSql, countArgs),
+        pool.query(dataSql, dataArgs)
+    ]);
+
+    const total = countRows[0]?.total || 0;
     const res_data = [];
 
     if (rows.length > 0) {
         rows.forEach((element) => {
-            var last_id = element.id
+            var last_id = element.id;
             var unique_id = element.unique_id;
             var number = element.number;
             var wamid = element.wamid;
@@ -152,9 +153,18 @@ router.post("/chat-list", auth, async (req, res) => {
     }
 
     return res.status(200).json({
+        error: false,
         data: res_data,
+        list: res_data,
         page_no,
-        count: res_data.length
+        count: res_data.length,
+        meta: {
+            total,
+            page: page_no,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            hasMore: offset + res_data.length < total
+        }
     });
 });
 
