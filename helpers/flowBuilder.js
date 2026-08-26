@@ -188,6 +188,30 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
                 break;
             }
 
+            // Interactive messages pause on themselves. On the next webhook,
+            // route the selected option before evaluating the message again.
+            if (node.type === "message" && node.data?.interactive && input.interaction_id) {
+                const interactionId = String(input.interaction_id).trim();
+                const outgoing = outgoingEdges(graph, node.id);
+                let selectedEdge = outgoing.find((edge) =>
+                    String(edge.sourceHandle || edge.handle || "").trim() === interactionId
+                );
+                // Backward compatibility for flows saved before sourceHandle
+                // was added: map option order to edge order.
+                if (!selectedEdge && outgoing.every((edge) => !edge.sourceHandle && !edge.handle)) {
+                    const optionIndex = (node.data.items || []).findIndex((item) =>
+                        String(item?.id || item?.title || "").trim() === interactionId
+                    );
+                    if (optionIndex >= 0) selectedEdge = outgoing[optionIndex];
+                }
+                if (!selectedEdge) {
+                    current = null;
+                    break;
+                }
+                current = selectedEdge.target;
+                continue;
+            }
+
             // Evaluation for condition / keyword nodes
             if (["start", "keyword", "condition"].includes(node.type) && node.type !== "start") {
                 const isMatch = matches(node, input);
