@@ -1,14 +1,14 @@
 export default {
-  "template_id": "rpple7765ukk28l14gaio3v8nrzlh5o861zic11qtmb",
-  "waba_template_id": "2438481639966661",
+  "template_id": "a6zh31a81615122c4uyv3n12r46qzrv68l7a4qu0a8n",
+  "waba_template_id": "1639063914895411",
   "category": "AUTHENTICATION",
   "language_code": "en",
-  "create_date": "2026-06-26 00:52:00",
-  "template_name": "otp",
+  "create_date": "2026-06-22 23:44:30",
+  "template_name": "login_otp",
   "status": "APPROVED",
   "reject_reason": "NONE",
   "template": {
-    "name": "otp",
+    "name": "login_otp",
     "language": "en",
     "category": "AUTHENTICATION",
     "components": [
