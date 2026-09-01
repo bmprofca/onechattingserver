@@ -7,7 +7,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Decrypt } from "../helpers/Decrypt.js";
-import { validateInteractivePayload } from "../helpers/interactiveMessage.js";
+import { validateInteractivePayload, getInteractiveFromRawJson } from "../helpers/interactiveMessage.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { WsIo } from "../server.js";
 import moment from "moment";
@@ -17,7 +17,7 @@ import {
     loadTemplateFromDb,
     parseMessageComponent,
 } from "../helpers/templateStorage.js";
-import { getInteractiveFromRawJson } from "../helpers/interactiveMessage.js";
+import { queryPaginatedMedia, resolveChatMediaFilter, normalizeChatNumber } from "../helpers/chatMedia.js";
 
 const router = express.Router();
 
@@ -69,7 +69,7 @@ router.post("/chat-list", auth, async (req, res) => {
         havingCondition = " HAVING is_assigned = 'yes' ";
     }
 
-    const baseQuery = 
+    const baseQuery =
         "FROM messages m " +
         "INNER JOIN (SELECT project_id, number, MAX(id) AS last_id FROM messages GROUP BY project_id, number) AS last_msg " +
         "ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id " +
@@ -87,7 +87,7 @@ router.post("/chat-list", auth, async (req, res) => {
         baseQuery +
         ") AS total_subquery";
 
-    const dataSql = 
+    const dataSql =
         "SELECT m.*, contacts.name, " +
         "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
         "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number AND ca.username = ?) THEN 'yes' ELSE 'no' END AS is_assigned, " +
@@ -635,7 +635,7 @@ router.post("/send-interactive-message", auth, async (req, res) => {
         for (const room of rooms) WsIo.to(room.username).emit('chat', { message: returnMessage, project_id, contact: { number } });
         return res.status(200).json({ error: false, ...returnMessage });
     } catch (error) {
-        if (connection) { await connection.rollback().catch(() => {}); connection.release(); }
+        if (connection) { await connection.rollback().catch(() => { }); connection.release(); }
         return res.status(200).json({ error: error?.response?.data?.message || error.message || 'Failed to send interactive message' });
     }
 });
@@ -2735,6 +2735,133 @@ router.post("/open-case-list", auth, async (req, res) => {
 
     } catch (error) {
         return res.status(200).json({ error: 'Failed to get open case list' });
+    }
+});
+
+router.post("/chat-media", auth, async (req, res) => {
+    try {
+        if (req.body && Object.keys(req.body).length > 0) {
+            var data = req.body?.data || "";
+            var key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] ? req.headers["username"] : "";
+        const project_id = decrypt?.project_id;
+        const number = normalizeChatNumber(decrypt?.number);
+        const filter = resolveChatMediaFilter(decrypt?.filter);
+        const page_no = Math.max(1, parseInt(decrypt?.page_no, 10) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(decrypt?.limit, 10) || 10));
+
+        if (!project_id || !number) {
+            return res.status(200).json({ error: "Provide all mandatory fields" });
+        }
+
+        const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+        if (!check_project_mapping) {
+            return res.status(200).json({ error: "User is not assigned on the project" });
+        }
+
+        const { mediaList, total, total_page, is_last_page } = await queryPaginatedMedia({
+            project_id,
+            number,
+            filter,
+            page_no,
+            limit,
+            includeContact: false,
+        });
+
+        return res.status(200).json({
+            error: false,
+            data: mediaList,
+            meta: {
+                total,
+                page_no,
+                limit,
+                total_page,
+                is_last_page,
+                filter,
+            },
+            msg: "Chat media fetched successfully",
+        });
+    } catch (error) {
+        console.error("chat-media error:", error);
+        return res.status(200).json({ error: "Failed to fetch chat media" });
+    }
+});
+
+router.post("/project-media", auth, async (req, res) => {
+    try {
+        if (req.body && Object.keys(req.body).length > 0) {
+            var data = req.body?.data || "";
+            var key = req.body?.key || "";
+        }
+
+        const decrypt = Decrypt(data, key);
+
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = req.headers["username"] ? req.headers["username"] : "";
+        const project_id = decrypt?.project_id;
+        const filter = resolveChatMediaFilter(decrypt?.filter);
+        const page_no = Math.max(1, parseInt(decrypt?.page_no, 10) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(decrypt?.limit, 10) || 10));
+        const search = (decrypt?.search ?? "").toString().trim();
+        const date_from = (decrypt?.date_from ?? "").toString().trim();
+        const date_to = (decrypt?.date_to ?? "").toString().trim();
+
+        if (!project_id) {
+            return res.status(200).json({ error: "Provide all mandatory fields" });
+        }
+
+        const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+        if (!check_project_mapping) {
+            return res.status(200).json({ error: "User is not assigned on the project" });
+        }
+
+        const result = await queryPaginatedMedia({
+            project_id,
+            filter,
+            page_no,
+            limit,
+            includeContact: true,
+            search,
+            date_from,
+            date_to,
+        });
+
+        if (result?.error) {
+            return res.status(200).json({ error: result.error });
+        }
+
+        const { mediaList, total, total_page, is_last_page } = result;
+
+        return res.status(200).json({
+            error: false,
+            data: mediaList,
+            meta: {
+                total,
+                page_no,
+                limit,
+                total_page,
+                is_last_page,
+                filter,
+                search,
+                date_from,
+                date_to,
+            },
+            msg: "Project media fetched successfully",
+        });
+    } catch (error) {
+        console.error("project-media error:", error);
+        return res.status(200).json({ error: "Failed to fetch project media" });
     }
 });
 

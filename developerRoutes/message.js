@@ -23,6 +23,11 @@ import {
     parseMessageComponent,
 } from "../helpers/templateStorage.js";
 import { normalizeAuthenticationSendComponents } from "../helpers/authenticationTemplate.js";
+import {
+    parseMediaNumbers,
+    queryPaginatedMedia,
+    resolveChatMediaFilter,
+} from "../helpers/chatMedia.js";
 
 const router = express.Router();
 
@@ -1681,6 +1686,90 @@ router.post("/chat-assign", developerMessageAuth, async (req, res) => {
             error: "Failed to update chat assignment",
             e: error?.message || error,
         });
+    }
+});
+
+/**
+ * POST /developer/message/media-list
+ * Header: token (developer token)
+ * Body: {
+ *   filter?: "all" | "image" | "video" | "document" | "audio",
+ *   page_no?: number,
+ *   limit?: number,
+ *   search?: string,
+ *   date_from?: string (YYYY-MM-DD),
+ *   date_to?: string (YYYY-MM-DD),
+ *   number?: string,
+ *   numbers?: string[] | string (comma-separated)
+ * }
+ *
+ * Returns paginated incoming/outgoing media files for the authenticated project.
+ * Pass number or numbers to restrict results to specific chat(s).
+ */
+router.post("/media-list", developerMessageAuth, async (req, res) => {
+    try {
+        const ctx = resolveProjectContext(req, res);
+        if (!ctx) return;
+
+        const { project_id } = ctx;
+        const filter = resolveChatMediaFilter(req.body?.filter);
+        const page_no = Math.max(1, parseInt(req.body?.page_no, 10) || 1);
+        let limit = parseInt(req.body?.limit, 10) || 10;
+        if (!Number.isFinite(limit) || limit < 1) limit = 10;
+        if (limit > 50) limit = 50;
+
+        const search = (req.body?.search ?? "").toString().trim();
+        const date_from = (req.body?.date_from ?? "").toString().trim();
+        const date_to = (req.body?.date_to ?? "").toString().trim();
+        const numbers = parseMediaNumbers(req.body?.number, req.body?.numbers);
+
+        const result = await queryPaginatedMedia({
+            project_id,
+            numbers,
+            filter,
+            page_no,
+            limit,
+            includeContact: true,
+            search,
+            date_from,
+            date_to,
+        });
+
+        if (result?.error) {
+            return res.status(400).json({ error: result.error });
+        }
+
+        const {
+            mediaList,
+            total,
+            total_page,
+            is_last_page,
+            search: appliedSearch,
+            date_from: appliedDateFrom,
+            date_to: appliedDateTo,
+        } = result;
+
+        return res.status(200).json({
+            data: mediaList,
+            count: mediaList.length,
+            pagination: {
+                page_no,
+                limit,
+                total,
+                total_pages: total_page,
+                has_more: !is_last_page,
+            },
+            filters: {
+                filter,
+                search: appliedSearch,
+                date_from: appliedDateFrom || "",
+                date_to: appliedDateTo || "",
+                numbers,
+            },
+        });
+    } catch (error) {
+        console.error("developer media-list error:", error);
+        return res.status(500).json({ error: "Failed to fetch media list" });
     }
 });
 
