@@ -32,6 +32,10 @@ import subscriptionRouter from "./routes/subscription.js";
 import qrcodeRouter from "./routes/qrcode.js";
 import techProviderRouter from "./routes/techProvider.js";
 import flowBuilderRouter from "./routes/flowBuilder.js";
+import publicWebsiteRouter from "./publicRoutes/website.js";
+import websiteAdminRouter from "./routes/websiteAdmin.js";
+import settingsAdminRouter from "./routes/settingsAdmin.js";
+import { ensureDeviceTokenTable } from "./helpers/fcm.js";
 
 const app = express();
 
@@ -146,6 +150,9 @@ app.use("/admin/qrcode", qrcodeRouter);
 
 app.use("/admin/tech-provider", techProviderRouter);
 app.use("/tech-provider", techProviderRouter);
+app.use("/public/website", publicWebsiteRouter);
+app.use("/admin/website", websiteAdminRouter);
+app.use("/admin/settings", settingsAdminRouter);
 app.use("/admin", adminRouter);
 app.use("/plan", planRouter);
 app.use("/developer", developerSettingsRouter);
@@ -250,6 +257,12 @@ server.listen(PORT, '0.0.0.0', async () => {
         }
     } else {
         console.log("⚠️  B2 not configured — chat media uploads will fail until B2 env vars are set");
+    }
+
+    try {
+        await ensureDeviceTokenTable();
+    } catch (error) {
+        console.error(`Device token table setup failed: ${error.message}`);
     }
 
     startCronJobs();

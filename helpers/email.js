@@ -102,3 +102,75 @@ export async function sendPasswordResetEmail(to, resetToken, userName = "User") 
         return false;
     }
 }
+
+function getAgentInvitationEmailHtml(userName, projectName, inviterName) {
+    const siteName = SITE_NAME || "OneChatting";
+    const siteLogo = SITE_LOGO || "";
+    const panelLink = `${(APP_DOMAIN || "").replace(/\/$/, "")}/login`;
+    const invitedBy = inviterName || "A project admin";
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project invitation - ${siteName}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f5; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 480px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);">
+                    <tr>
+                        <td style="padding: 40px 40px 32px;">
+                            <div style="text-align: center; margin-bottom: 24px;">
+                                ${siteLogo ? `<img src="${siteLogo}" alt="${siteName}" style="max-width: 160px; max-height: 48px; margin-bottom: 16px;" />` : ""}
+                                <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #18181b;">You're invited to a project</h1>
+                            </div>
+                            <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.6; color: #3f3f46;">Hi ${userName},</p>
+                            <p style="margin: 0 0 24px; font-size: 16px; line-height: 1.6; color: #3f3f46;">
+                                ${invitedBy} invited you to join <strong>${projectName}</strong> as an agent on ${siteName}.
+                                Sign in, open <strong>Switch Project</strong>, and accept or reject the invitation.
+                            </p>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center" style="padding: 8px 0 24px;">
+                                        <a href="${panelLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">Open ${siteName}</a>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #71717a;">
+                                You are not added to the project until you accept the invitation.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+`;
+}
+
+export async function sendAgentInvitationEmail(to, userName, projectName, inviterName) {
+    const siteName = SITE_NAME || "OneChatting";
+    const from = SMTP_FROM || (SMTP_USER ? `"${siteName}" <${SMTP_USER}>` : `"${siteName}"`);
+    const panelLink = `${(APP_DOMAIN || "").replace(/\/$/, "")}/login`;
+    const html = getAgentInvitationEmailHtml(userName, projectName, inviterName);
+
+    try {
+        await transporter.sendMail({
+            from,
+            to,
+            subject: `Invitation to join ${projectName} - ${siteName}`,
+            text: `Hi ${userName}, ${inviterName || "A project admin"} invited you to join ${projectName} as an agent. Sign in at ${panelLink}, open Switch Project, and accept or reject the invitation.`,
+            html
+        });
+        return true;
+    } catch (error) {
+        console.error("[email] Failed to send agent invitation:", error?.message || error);
+        return false;
+    }
+}

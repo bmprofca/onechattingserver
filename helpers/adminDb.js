@@ -1,5 +1,6 @@
 import pool from "../db.js";
 import { GET_BALANCE_BY_USERNAME, GET_PROJECTS_OF_USER } from "./function.js";
+import { ensureProjectMarketingColumns } from "../routes/project.js";
 
 // Get admin user from an active token
 export async function getAdminByToken(token) {
@@ -313,6 +314,7 @@ export async function getProjectsCount(filters = {}) {
 }
 
 export async function getProjectById(projectId) {
+    await ensureProjectMarketingColumns();
     const [rows] = await pool.query(
         `SELECT 
             id,
@@ -323,7 +325,16 @@ export async function getProjectById(projectId) {
             is_waba_connected,
             marketing_charge,
             utility_charge,
-            authentication_charge
+            authentication_charge,
+            pan,
+            gst,
+            firm_type,
+            team_volume,
+            client_volume,
+            annual_revenue,
+            industry,
+            website,
+            city
         FROM aisensy_projects
         WHERE project_id = ?
         LIMIT 1`,

@@ -20,6 +20,112 @@ const PERMISSION_FIELD_MAP = {
     "chat assign access": "chat_assign_access",
 };
 
+const SYSTEM_PERMISSIONS = [
+    {
+        key: "support_agent",
+        name: "Support Agent",
+        remark: "Handles customer chats and can view contacts.",
+        access: ["view contact"],
+    },
+    {
+        key: "team_lead",
+        name: "Team Lead",
+        remark: "Sees every chat, assigns conversations, and manages contacts and templates.",
+        access: [
+            "create contact",
+            "edit contact",
+            "view contact",
+            "view all chat",
+            "create template",
+            "edit template",
+            "chat assign access",
+        ],
+    },
+    {
+        key: "operations_manager",
+        name: "Operations Manager",
+        remark: "Runs contacts, templates, broadcasts, and chat assignment. Project settings stay with the branch admin.",
+        access: [
+            "create contact",
+            "edit contact",
+            "delete contact",
+            "view contact",
+            "view all chat",
+            "create template",
+            "edit template",
+            "delete template",
+            "broadcast access",
+            "chat assign access",
+        ],
+    },
+];
+
+let permissionColumnsReady = null;
+
+async function ensurePermissionSystemColumns() {
+    if (!permissionColumnsReady) {
+        permissionColumnsReady = (async () => {
+            const [existing] = await pool.query(
+                `SELECT COLUMN_NAME AS name
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'permission_list'
+                   AND COLUMN_NAME IN ('is_system', 'system_key')`
+            );
+            const have = new Set(existing.map((row) => row.name));
+            if (!have.has("is_system")) {
+                await pool.query("ALTER TABLE permission_list ADD COLUMN is_system TINYINT(1) NOT NULL DEFAULT 0");
+            }
+            if (!have.has("system_key")) {
+                await pool.query("ALTER TABLE permission_list ADD COLUMN system_key VARCHAR(40) NULL");
+            }
+            const [indexes] = await pool.query(
+                `SELECT INDEX_NAME AS name
+                 FROM information_schema.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'permission_list' AND INDEX_NAME = 'uniq_project_system_key'`
+            );
+            if (indexes.length === 0) {
+                await pool.query("ALTER TABLE permission_list ADD UNIQUE KEY uniq_project_system_key (project_id, system_key)");
+            }
+        })().catch((error) => {
+            permissionColumnsReady = null;
+            throw error;
+        });
+    }
+    return permissionColumnsReady;
+}
+
+export async function ensureSystemPermissions(project_id, username) {
+    await ensurePermissionSystemColumns();
+    const [existing] = await pool.query(
+        "SELECT system_key FROM permission_list WHERE project_id = ? AND is_system = 1",
+        [project_id]
+    );
+    const have = new Set(existing.map((row) => row.system_key));
+    const now = TIMESTAMP();
+    const actor = username || "system";
+
+    for (const role of SYSTEM_PERMISSIONS) {
+        if (have.has(role.key)) continue;
+        const permission_id = RANDOM_STRING(30);
+        const enabled = new Set(role.access);
+        try {
+            await pool.query(
+                "INSERT INTO `permission_list`(`permission_id`, `name`, `create_date`, `create_by`, `modify_date`, `modify_by`, `remark`, `project_id`, `is_system`, `system_key`) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [permission_id, role.name, now, actor, now, actor, role.remark, project_id, 1, role.key]
+            );
+        } catch (error) {
+            if (error?.code === "ER_DUP_ENTRY") continue;
+            throw error;
+        }
+        for (const permission of Object.keys(PERMISSION_FIELD_MAP)) {
+            await pool.query(
+                "INSERT INTO `permission_options`(`permission_id`, `permission`, `status`) VALUES (?,?,?)",
+                [permission_id, permission, enabled.has(permission) ? "1" : "0"]
+            );
+        }
+    }
+}
+
 const emptyPermissionOptions = () => ({
     contact_create: false,
     contact_edit: false,
@@ -256,7 +362,12 @@ router.post("/list", auth, async (req, res) => {
         return res.status(200).json({ error: 'User is not assigned on the project' })
     }
 
-    const [row] = await pool.query("SELECT * FROM permission_list WHERE project_id = ? ORDER BY id DESC", [project_id]);
+    await ensureSystemPermissions(project_id, username);
+
+    const [row] = await pool.query(
+        "SELECT * FROM permission_list WHERE project_id = ? ORDER BY is_system DESC, FIELD(system_key, 'support_agent', 'team_lead', 'operations_manager'), id DESC",
+        [project_id]
+    );
 
     if (row.length === 0) {
         return res.status(200).json({ data: [], count: 0, msg: 'Permission list fetched successfully' });
@@ -285,6 +396,7 @@ router.post("/list", auth, async (req, res) => {
         create_by: buildAuditUser(userMap, element?.create_by, mappingTypeMap),
         modify_by: buildAuditUser(userMap, element?.modify_by, mappingTypeMap),
         permissions: permissionsMap.get(element.permission_id) || emptyPermissionOptions(),
+        is_system: element?.is_system == 1,
     }));
 
     return res.status(200).json({ data: res_data, count: res_data.length, msg: 'Permission list fetched successfully' })
@@ -400,6 +512,73 @@ router.post("/set-access", auth, async (req, res) => {
 
 
 
+});
+
+router.post("/delete", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const username = req.headers["username"] ? req.headers["username"] : '';
+    const project_id = decrypt.project_id;
+    const permission_id = decrypt.permission_id;
+
+    if (!project_id || !permission_id) {
+        return res.status(200).json({ error: 'Provide all mandetory fields' });
+    }
+
+    const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+    if (!check_project_mapping) {
+        return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    await ensurePermissionSystemColumns();
+    const [rows] = await pool.query(
+        "SELECT permission_id, is_system FROM permission_list WHERE permission_id = ? AND project_id = ? LIMIT 1",
+        [permission_id, project_id]
+    );
+    if (rows.length === 0) {
+        return res.status(200).json({ error: 'Permission not found' });
+    }
+    if (rows[0].is_system == 1) {
+        return res.status(200).json({ error: 'System permissions cannot be deleted' });
+    }
+
+    const [assigned] = await pool.query(
+        "SELECT unique_id FROM project_mapping WHERE project_id = ? AND permission_id = ? AND is_deleted = ? LIMIT 1",
+        [project_id, permission_id, '0']
+    );
+    if (assigned.length > 0) {
+        return res.status(200).json({ error: 'This permission is assigned to an agent. Move them before deleting it.' });
+    }
+
+    const [pendingInvites] = await pool.query(
+        "SELECT unique_id FROM agent_invitations WHERE project_id = ? AND permission_id = ? AND status = ? LIMIT 1",
+        [project_id, permission_id, 'pending']
+    ).catch(() => [[]]);
+    if (pendingInvites.length > 0) {
+        return res.status(200).json({ error: 'This permission is used by a pending invitation. Cancel that invitation before deleting it.' });
+    }
+
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.query("DELETE FROM permission_options WHERE permission_id = ?", [permission_id]);
+        await connection.query("DELETE FROM permission_list WHERE permission_id = ? AND project_id = ? AND is_system = 0", [permission_id, project_id]);
+        await connection.commit();
+        return res.status(200).json({ error: false, msg: 'Permission deleted successfully' });
+    } catch (error) {
+        await connection.rollback();
+        return res.status(200).json({ error: 'Failed to delete permission' });
+    } finally {
+        connection.release();
+    }
 });
 
 export default router;

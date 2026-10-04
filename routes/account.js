@@ -5,11 +5,13 @@ import { FUTURE_TIMESTAMP, GENERATE_PASSWORD, GET_BALANCE_BY_USERNAME, IS_STRONG
 import { Decrypt } from "../helpers/Decrypt.js";
 import { auth } from "../middleware/auth.js";
 import { sendPasswordResetEmail } from "../helpers/email.js";
+import { listPendingInvitationsForUser } from "../helpers/agentInvitations.js";
 import { sendOtpSms } from "../helpers/sms.js";
 import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
 import { isB2Enabled, uploadBufferToB2, getProxyMediaUrl, getContentTypeFromExtension } from "../helpers/b2Storage.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { fileTypeFromBuffer } from "file-type";
+import { deleteDeviceToken, saveDeviceToken } from "../helpers/fcm.js";
 import fs from "fs";
 import path from "path";
 
@@ -171,15 +173,19 @@ router.post("/register", async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    const name = decrypt.name;
-    const firm_name = decrypt.firm_name;
-    const mobile = decrypt.mobile;
-    const country_code = decrypt.country_code;
-    const otp = decrypt.otp;
-    const email = decrypt.email || '';
+    const name = String(decrypt.name || '').trim();
+    const firm_name = String(decrypt.firm_name || '').trim();
+    const mobile = String(decrypt.mobile || '').trim();
+    const country_code = String(decrypt.country_code || '').trim();
+    const otp = String(decrypt.otp || '').trim();
+    const email = String(decrypt.email || '').trim();
 
-    if (!name || !firm_name || !mobile || !country_code || !otp) {
+    if (!name || !mobile || !country_code || !otp) {
         return res.status(200).json({ error: 'Provide all mandetory fields' });
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(200).json({ error: 'Enter a valid email' });
     }
 
     const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
@@ -350,6 +356,7 @@ router.post("/profile", auth, async (req, res) => {
             project_count,
             list: projects,
         },
+        pending_invitations: await listPendingInvitationsForUser(username).catch(() => []),
     }
 
     const [business_details] = await pool.query("SELECT * FROM aisensy_businesses WHERE username = ?", [username]);
@@ -516,6 +523,40 @@ router.post("/session-check", auth, async (req, res) => {
 
 
 
+});
+
+router.post("/fcm-token", auth, async (req, res) => {
+    try {
+        const username = req.headers["username"] || "";
+        const data = req.body?.data || "";
+        const key = req.body?.key || "";
+        const decrypt = Decrypt(data, key);
+        const token = String(decrypt?.token || "").trim();
+        const platform = String(decrypt?.platform || "android").trim() || "android";
+
+        if (!username || !token) {
+            return res.status(200).json({ error: "Provide a device token" });
+        }
+
+        await saveDeviceToken(username, token, platform);
+        return res.status(200).json({ error: false });
+    } catch (error) {
+        return res.status(200).json({ error: error.message || "Failed to save device token" });
+    }
+});
+
+router.post("/fcm-token/remove", auth, async (req, res) => {
+    try {
+        const username = req.headers["username"] || "";
+        const data = req.body?.data || "";
+        const key = req.body?.key || "";
+        const decrypt = Decrypt(data, key);
+        const token = String(decrypt?.token || "").trim();
+        await deleteDeviceToken(username, token);
+        return res.status(200).json({ error: false });
+    } catch (error) {
+        return res.status(200).json({ error: error.message || "Failed to remove device token" });
+    }
 });
 
 router.post("/logout", auth, async (req, res) => {

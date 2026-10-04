@@ -128,10 +128,10 @@ router.post('/verify-otp', async (req, res) => {
             return res.status(401).json({ error: 'Invalid or expired OTP' });
         }
 
-        const [rows] = await pool.query(
+            const [rows] = await pool.query(
             "SELECT id, username, email, role, name, country_code, mobile FROM users WHERE mobile = ? AND role = 'admin' LIMIT 1",
             [mobile]
-        );
+            );
 
         let user = rows[0] || null;
 
@@ -802,98 +802,134 @@ router.get('/projects/:project_id/meta-details', async (req, res) => {
                 .json({ error: 'Provide all mandetory fields' });
         }
 
+        const localProject = await getProjectById(project_id);
+        const marketingProfile = {
+            project_name: localProject?.project_name || '',
+            business_id: localProject?.business_id || '',
+            pan: localProject?.pan || '',
+            gst: localProject?.gst || '',
+            firm_type: localProject?.firm_type || '',
+            team_volume: localProject?.team_volume || '',
+            client_volume: localProject?.client_volume || '',
+            annual_revenue: localProject?.annual_revenue || '',
+            industry: localProject?.industry || '',
+            website: localProject?.website || '',
+            city: localProject?.city || '',
+        };
+
         const project_token = await GetAiSensyProjectToken(project_id);
         if (!project_token) {
-            return res
-                .status(200)
-                .json({ error: 'Failed to get project token' });
+            return res.status(200).json({
+                error: false,
+                data: {
+                    project: {
+                        error: false,
+                        name: marketingProfile.project_name,
+                        ...marketingProfile,
+                    },
+                    profile: {},
+                },
+            });
         }
 
         const res_data = {};
         const activeProvider = await getActiveTechProvider();
 
         if (activeProvider.provider_type === "aisensy" && activeProvider.aisensy_partner_id && activeProvider.aisensy_api_key) {
-            const options2 = {
-                method: 'GET',
+        const options2 = {
+            method: 'GET',
                 url: `https://apis.aisensy.com/partner-apis/v1/partner/${activeProvider.aisensy_partner_id}/project/${project_id}`,
-                headers: {
-                    Accept: 'application/json',
+            headers: {
+                Accept: 'application/json',
                     'X-AiSensy-Partner-API-Key': activeProvider.aisensy_api_key
-                }
+            }
+        };
+
+        try {
+            const { data } = await axios.request(options2);
+
+            const {
+                name,
+                status,
+                wa_number,
+                wa_messaging_tier,
+                wa_display_name_status,
+                fb_business_manager_status,
+                wa_display_name,
+                wa_quality_rating,
+                wa_about,
+                wa_display_image,
+                billing_currency,
+                timezone,
+                is_whatsapp_verified,
+                daily_template_limit,
+                wa_business_profile
+            } = data || {};
+
+            res_data.is_waba_connected = false;
+
+            res_data.project = {
+                error: false,
+                name,
+                status,
+                wa_messaging_tier,
+                wa_display_name_status,
+                fb_business_manager_status,
+                wa_display_name,
+                wa_quality_rating,
+                billing_currency,
+                timezone,
+                is_whatsapp_verified,
+                    daily_template_limit,
+                    ...marketingProfile,
             };
 
-            try {
-                const { data } = await axios.request(options2);
-
-                const {
-                    name,
-                    status,
-                    wa_number,
-                    wa_messaging_tier,
-                    wa_display_name_status,
-                    fb_business_manager_status,
-                    wa_display_name,
-                    wa_quality_rating,
-                    wa_about,
-                    wa_display_image,
-                    billing_currency,
-                    timezone,
-                    is_whatsapp_verified,
-                    daily_template_limit,
-                    wa_business_profile
-                } = data || {};
-
-                res_data.is_waba_connected = false;
-
-                res_data.project = {
-                    error: false,
-                    name,
-                    status,
-                    wa_messaging_tier,
-                    wa_display_name_status,
-                    fb_business_manager_status,
-                    wa_display_name,
-                    wa_quality_rating,
-                    billing_currency,
-                    timezone,
-                    is_whatsapp_verified,
-                    daily_template_limit
+            if (wa_business_profile) {
+                res_data.is_waba_connected = true;
+                res_data.profile = {
+                    about: wa_about,
+                    description: wa_business_profile?.description,
+                    profile_picture_url: wa_display_image,
+                    email: wa_business_profile?.email,
+                    websites: wa_business_profile?.websites,
+                    vertical: wa_business_profile?.vertical,
+                    address: wa_business_profile?.address,
+                    wa_number
                 };
 
-                if (wa_business_profile) {
-                    res_data.is_waba_connected = true;
-                    res_data.profile = {
-                        about: wa_about,
-                        description: wa_business_profile?.description,
-                        profile_picture_url: wa_display_image,
-                        email: wa_business_profile?.email,
-                        websites: wa_business_profile?.websites,
-                        vertical: wa_business_profile?.vertical,
-                        address: wa_business_profile?.address,
-                        wa_number
-                    };
-
-                    await pool.query(
-                        'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
-                        ['1', project_id]
-                    );
+                await pool.query(
+                    'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
+                    ['1', project_id]
+                );
 
                     await ensureProjectWebhook(project_id, {
                         retries: 2,
                         projectToken: project_token
                     });
-                } else {
-                    await pool.query(
-                        'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
-                        ['0', project_id]
-                    );
-                }
-            } catch (error) {
-                console.log(error);
-                res_data.project = {
-                    error: 'Error in fetching project details'
+            } else {
+                await pool.query(
+                    'UPDATE `aisensy_projects` SET `is_waba_connected`=? WHERE project_id = ?',
+                    ['0', project_id]
+                );
+            }
+        } catch (error) {
+            console.log(error);
+            res_data.project = {
+                    error: false,
+                    name: marketingProfile.project_name,
+                    ...marketingProfile,
                 };
             }
+        }
+
+        if (!res_data.project) {
+            res_data.project = {
+                error: false,
+                name: marketingProfile.project_name,
+                ...marketingProfile,
+            };
+        } else {
+            res_data.project = { ...res_data.project, ...marketingProfile };
         }
 
         return res.status(200).json({

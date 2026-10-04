@@ -1,4 +1,5 @@
 import pool from "../db.js";
+import { pushChatIfOffline } from "./fcm.js";
 
 export function projectRoom(project_id) {
     return `project:${project_id}`;
@@ -14,5 +15,8 @@ export async function emitToProjectSockets(WsIo, project_id, event, payload) {
 
     for (const roomObj of room_row) {
         WsIo.to(roomObj.username).emit(event, payload);
+        if (event === "chat") {
+            await pushChatIfOffline(WsIo, roomObj.username, payload);
+        }
     }
 }

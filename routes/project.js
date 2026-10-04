@@ -10,6 +10,86 @@ import { activateProjectServices } from "../helpers/aisensyBilling.js";
 import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 import { getActiveTechProvider, subscribeMetaWabaWebhook, exchangeMetaEmbeddedSignupCode } from "../helpers/techProvider.js";
 
+const FIRM_TYPES = ["Proprietorship", "Partnership", "LLP", "Private Limited", "Public Limited", "Other"];
+const TEAM_VOLUMES = ["1-5", "6-20", "21-50", "51-200", "200+"];
+const CLIENT_VOLUMES = ["1-50", "51-200", "201-1000", "1000+"];
+const REVENUE_RANGES = ["Under ₹10L", "₹10L-₹50L", "₹50L-₹1Cr", "₹1Cr-₹5Cr", "₹5Cr+"];
+
+const MARKETING_COLUMNS = [
+    ["pan", "VARCHAR(20) NULL"],
+    ["gst", "VARCHAR(20) NULL"],
+    ["firm_type", "VARCHAR(80) NULL"],
+    ["team_volume", "VARCHAR(50) NULL"],
+    ["client_volume", "VARCHAR(50) NULL"],
+    ["annual_revenue", "VARCHAR(80) NULL"],
+    ["industry", "VARCHAR(120) NULL"],
+    ["website", "VARCHAR(255) NULL"],
+    ["city", "VARCHAR(100) NULL"],
+];
+
+let marketingColumnsReady = null;
+
+function cleanText(value, max) {
+    return String(value || "").trim().slice(0, max);
+}
+
+export async function ensureProjectMarketingColumns() {
+    if (!marketingColumnsReady) {
+        marketingColumnsReady = (async () => {
+            const [existing] = await pool.query(
+                `SELECT COLUMN_NAME AS name
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'aisensy_projects'`
+            );
+            const have = new Set(existing.map((row) => row.name));
+            for (const [name, definition] of MARKETING_COLUMNS) {
+                if (have.has(name)) continue;
+                await pool.query(`ALTER TABLE aisensy_projects ADD COLUMN \`${name}\` ${definition}`);
+            }
+        })().catch((error) => {
+            marketingColumnsReady = null;
+            throw error;
+        });
+    }
+    return marketingColumnsReady;
+}
+
+function readProjectMarketing(payload = {}) {
+    const pan = cleanText(payload.pan, 20).toUpperCase();
+    const gst = cleanText(payload.gst, 20).toUpperCase();
+    const firm_type = cleanText(payload.firm_type, 80);
+    const team_volume = cleanText(payload.team_volume, 50);
+    const client_volume = cleanText(payload.client_volume, 50);
+    const annual_revenue = cleanText(payload.annual_revenue, 80);
+    const industry = cleanText(payload.industry, 120);
+    const website = cleanText(payload.website, 255);
+    const city = cleanText(payload.city, 100);
+
+    if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
+        return { error: "Enter a valid PAN" };
+    }
+    if (gst && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gst)) {
+        return { error: "Enter a valid GSTIN" };
+    }
+    if (firm_type && !FIRM_TYPES.includes(firm_type)) {
+        return { error: "Select a valid firm type" };
+    }
+    if (team_volume && !TEAM_VOLUMES.includes(team_volume)) {
+        return { error: "Select a valid team volume" };
+    }
+    if (client_volume && !CLIENT_VOLUMES.includes(client_volume)) {
+        return { error: "Select a valid client volume" };
+    }
+    if (annual_revenue && !REVENUE_RANGES.includes(annual_revenue)) {
+        return { error: "Select a valid annual revenue" };
+    }
+    if (website && !/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}([/?#].*)?$/i.test(website)) {
+        return { error: "Enter a valid website" };
+    }
+
+    return { pan, gst, firm_type, team_volume, client_volume, annual_revenue, industry, website, city };
+}
+
 // =====================================================================
 // GET /project/embedded-signup-config
 // Returns the active tech provider config so the web frontend can
@@ -541,6 +621,11 @@ router.post("/info", auth, async (req, res) => {
 
     const project_data = await AISENSY_PROJECT_DATA(project_id);
 
+    const [package_row] = await pool.query(
+        "SELECT DATE_FORMAT(end_date, '%Y-%m-%d') AS end_date FROM user_package WHERE project_id = ? AND type = 'project' ORDER BY end_date DESC, id DESC LIMIT 1",
+        [project_id]
+    );
+    const subscription_end_date = package_row[0]?.end_date || null;
 
     return res.status(200).json({
         error: false,
@@ -549,6 +634,7 @@ router.post("/info", auth, async (req, res) => {
             owned,
             project_id,
             status: project_data?.status == '1' ? true : false,
+            subscription_end_date,
             charges: {
                 marketing: Number(project_data?.marketing_charge),
                 utility: Number(project_data?.utility_charge),
@@ -700,6 +786,7 @@ router.post("/create-project", auth, async (req, res) => {
 
     let connection;
     try {
+        await ensureProjectMarketingColumns();
 
         connection = await pool.getConnection();
 
@@ -721,13 +808,19 @@ router.post("/create-project", auth, async (req, res) => {
         }
 
         const username = req.headers["username"] ? req.headers["username"] : '';
-        const company_name = decrypt?.company_name;
-        const project_name = decrypt?.project_name;
+        const company_name = String(decrypt?.company_name || '').trim();
+        const project_name = String(decrypt?.project_name || '').trim();
         const package_id = decrypt?.package_id;
+        const marketing = readProjectMarketing(decrypt);
 
         if (!company_name || !project_name || !package_id) {
             await connection.rollback();
             return res.status(200).json({ error: 'Provide all mandatory fields' });
+        }
+
+        if (marketing.error) {
+            await connection.rollback();
+            return res.status(200).json({ error: marketing.error });
         }
 
         const [package_row] = await connection.query("SELECT * FROM package WHERE package_id = ?", [package_id]);
@@ -871,7 +964,19 @@ router.post("/create-project", auth, async (req, res) => {
             project_id = data?.id;
 
             const unique_id = RANDOM_STRING(30);
-            await connection.query("INSERT INTO `aisensy_projects`(`unique_id`, `project_id`, `project_name`, `business_id`, `create_date`, `create_by`, `modify_date`, `modify_by`, `marketing_charge`, `utility_charge`, `authentication_charge`, `status`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", [unique_id, project_id, project_name, business_id, TIMESTAMP(), username, TIMESTAMP(), username, TEMPLATE_CHARGES.marketing, TEMPLATE_CHARGES.utility, TEMPLATE_CHARGES.authentication, '1']);
+            await connection.query(
+                `INSERT INTO aisensy_projects
+                    (unique_id, project_id, project_name, business_id, create_date, create_by, modify_date, modify_by,
+                     marketing_charge, utility_charge, authentication_charge, status,
+                     pan, gst, firm_type, team_volume, client_volume, annual_revenue, industry, website, city)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                [
+                    unique_id, project_id, project_name, business_id, TIMESTAMP(), username, TIMESTAMP(), username,
+                    TEMPLATE_CHARGES.marketing, TEMPLATE_CHARGES.utility, TEMPLATE_CHARGES.authentication, '1',
+                    marketing.pan, marketing.gst, marketing.firm_type, marketing.team_volume, marketing.client_volume,
+                    marketing.annual_revenue, marketing.industry, marketing.website, marketing.city,
+                ]
+            );
 
             const map_id = RANDOM_STRING(30);
             await connection.query("INSERT INTO `project_mapping`(`unique_id`, `project_id`, `username`, `type`, `create_by`, `create_date`, `modify_by`, `modify_date`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?)", [map_id, project_id, username, 'admin', username, TIMESTAMP(), username, TIMESTAMP(), '0']);
