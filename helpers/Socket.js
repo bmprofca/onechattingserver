@@ -106,6 +106,17 @@ export function setupSocketIO(server) {
             }
         });
 
+        socket.on("mobile_presence", (payload = {}) => {
+            const session = socket.data.auth;
+            if (!session || session.auth_type !== "app") return;
+            const room = `mobile:${session.username}`;
+            if (payload.state === "background") {
+                socket.leave(room);
+            } else if (payload.state === "active") {
+                socket.join(room);
+            }
+        });
+
         socket.on("disconnect", () => { });
     });
 

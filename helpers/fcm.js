@@ -90,7 +90,8 @@ export async function pushChatIfOffline(WsIo, username, payload) {
     if (!username) return;
     const message = payload?.message || {};
     if (message.type !== "in") return;
-    if (userIsOnline(WsIo, username)) return;
+    // A closed app can leave the socket room occupied until the ping times out.
+    // Still send the push. The open app ignores it and uses the socket instead.
     if (!initFirebase()) return;
 
     let rows = [];
@@ -132,7 +133,12 @@ export async function pushChatIfOffline(WsIo, username, payload) {
                 priority: "high",
                 notification: {
                     channelId: "onechat_messages",
+                    icon: "ic_notification",
+                    color: "#25D366",
                     sound: "default",
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
+                    visibility: "PUBLIC",
                     priority: "high",
                     ...(contactNumber ? { tag: contactNumber } : {}),
                 },
