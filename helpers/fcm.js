@@ -119,6 +119,7 @@ export async function pushChatIfOffline(WsIo, username, payload) {
         messageText: body,
         projectId: String(payload?.project_id || ""),
         mediaType: String(message.message_type || ""),
+        messageWamid: String(message.wamid || ""),
     };
 
     try {
