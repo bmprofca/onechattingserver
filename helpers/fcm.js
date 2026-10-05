@@ -14,7 +14,7 @@ function initFirebase() {
     if (initAttempted) return ready;
     initAttempted = true;
 
-    const filePath = process.env.FIREBASE_SERVICE_ACCOUNT || defaultAccountPath;
+    const filePath = defaultAccountPath;
     if (!fs.existsSync(filePath)) {
         console.warn(`FCM disabled: service account not found at ${filePath}`);
         return false;
@@ -125,29 +125,16 @@ export async function pushChatIfOffline(WsIo, username, payload) {
         const response = await admin.messaging().sendEachForMulticast({
             tokens: rows.map((row) => row.token),
             data,
-            notification: {
-                title: contactName,
-                body,
-            },
             android: {
                 priority: "high",
-                notification: {
-                    channelId: "onechat_messages",
-                    icon: "ic_notification",
-                    color: "#25D366",
-                    sound: "default",
-                    defaultSound: true,
-                    defaultVibrateTimings: true,
-                    visibility: "PUBLIC",
-                    priority: "high",
-                    ...(contactNumber ? { tag: contactNumber } : {}),
-                },
             },
         });
 
         const stale = [];
         response.responses.forEach((result, index) => {
-            const code = result.error?.code || "";
+            if (result.success) return;
+            const code = result.error?.code || "unknown";
+            console.warn(`FCM delivery failed (${code})`);
             if (
                 code === "messaging/registration-token-not-registered" ||
                 code === "messaging/invalid-registration-token"
@@ -155,6 +142,9 @@ export async function pushChatIfOffline(WsIo, username, payload) {
                 stale.push(rows[index].token);
             }
         });
+        if (response.successCount > 0) {
+            console.log(`FCM delivered ${response.successCount}/${rows.length}`);
+        }
 
         if (stale.length) {
             await pool.query(
