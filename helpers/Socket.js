@@ -84,6 +84,9 @@ export function setupSocketIO(server) {
                     socket.join(projectRoom(session.project_id));
                 } else {
                     socket.join(session.username);
+                    if (payload.client === "mobile") {
+                        socket.join(`mobile:${session.username}`);
+                    }
                 }
                 socket.data.auth = session;
 

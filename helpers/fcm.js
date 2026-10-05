@@ -50,7 +50,7 @@ export async function ensureDeviceTokenTable() {
 
 export function userIsOnline(WsIo, username) {
     if (!username || !WsIo) return false;
-    const room = WsIo.sockets?.adapter?.rooms?.get(username);
+    const room = WsIo.sockets?.adapter?.rooms?.get(`mobile:${username}`);
     return Boolean(room && room.size > 0);
 }
 
@@ -124,7 +124,19 @@ export async function pushChatIfOffline(WsIo, username, payload) {
         const response = await admin.messaging().sendEachForMulticast({
             tokens: rows.map((row) => row.token),
             data,
-            android: { priority: "high" },
+            notification: {
+                title: contactName,
+                body,
+            },
+            android: {
+                priority: "high",
+                notification: {
+                    channelId: "onechat_messages",
+                    sound: "default",
+                    priority: "high",
+                    ...(contactNumber ? { tag: contactNumber } : {}),
+                },
+            },
         });
 
         const stale = [];
