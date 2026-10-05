@@ -15,6 +15,13 @@ import { deleteDeviceToken, saveDeviceToken } from "../helpers/fcm.js";
 import fs from "fs";
 import path from "path";
 
+const REVIEW_MOBILE = "9999999999";
+const REVIEW_OTP = "123456";
+
+function isReviewMobile(mobile) {
+    return String(mobile || "").replace(/\D/g, "") === REVIEW_MOBILE;
+}
+
 router.post("/send-otp", async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
         var data = req.body?.data || '';
@@ -50,21 +57,23 @@ router.post("/send-otp", async (req, res) => {
         return res.status(200).json({ error: 'Mobile number already registered' });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expire_date = FUTURE_TIMESTAMP(10); // 10 minutes expiry
-    console.log("OTP", otp);
+    const reviewLogin = isReviewMobile(mobile);
+    const otp = reviewLogin ? REVIEW_OTP : Math.floor(100000 + Math.random() * 900000).toString();
+    const expire_date = FUTURE_TIMESTAMP(reviewLogin ? 525600 : 10);
+    if (!reviewLogin) console.log("OTP", otp);
 
     const conn = await pool.getConnection();
     try {
         await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')", [mobile, otp, expire_date]);
         await conn.commit();
 
-        try {
-            await sendOtpWhatsApp(mobile, otp);
-            await sendOtpSms(mobile, otp);
-        } catch (error) {
-            console.error("Failed to send OTP:", error);
-            // Optionally, handle failure (e.g. continue or throw)
+        if (!reviewLogin) {
+            try {
+                await sendOtpWhatsApp(mobile, otp);
+                await sendOtpSms(mobile, otp);
+            } catch (error) {
+                console.error("Failed to send OTP:", error);
+            }
         }
 
         return res.status(200).json({ error: false, msg: 'OTP sent successfully' });
@@ -96,9 +105,12 @@ router.post("/login", async (req, res) => {
         return res.status(200).json({ error: 'Provide mobile and OTP' });
     }
 
-    const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
+    const reviewLogin = isReviewMobile(mobile) && String(otp) === REVIEW_OTP;
+    const [otp_row] = reviewLogin
+        ? [[]]
+        : await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
 
-    if (otp_row.length === 0) {
+    if (!reviewLogin && otp_row.length === 0) {
         return res.status(200).json({ error: 'Invalid or expired OTP' });
     }
 
@@ -108,8 +120,9 @@ router.post("/login", async (req, res) => {
         return res.status(200).json({ error: 'User not registered. Please sign up.' })
     }
 
-    // Mark OTP as verified
-    await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
+    if (!reviewLogin) {
+        await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
+    }
 
     const user_data = data_row[0];
     const username = user_data.username;
