@@ -10,7 +10,7 @@ import crypto from "crypto";
 
 const router = express.Router();
 
-const generateNumericQrId = () => crypto.randomInt(1000000000, 9999999999).toString();
+const generateNumericQrId = () => crypto.randomInt(1000000000, 9876543210).toString();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN AUTH MIDDLEWARE
@@ -402,7 +402,7 @@ router.get("/validate/:qr_id", async (req, res) => {
         pool.query(
             "UPDATE project_qr_codes SET scan_count = scan_count + 1 WHERE qr_id = ?",
             [qr_id]
-        ).catch(() => {});
+        ).catch(() => { });
 
         // Format clean WhatsApp number (keep only digits)
         const cleanWaNumber = project.wa_number.replace(/\D/g, "");
