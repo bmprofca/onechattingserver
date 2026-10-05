@@ -3,13 +3,9 @@ import { startCampaignScheduler } from "../helpers/campaign/scheduler.js";
 import { stopExpiredProjectBilling } from "../helpers/aisensyBilling.js";
 import { generateAiBills } from "../cron/aiBilling.js";
 import { processDailyWishes } from "../cron/birthdayAnniversaryWish.js";
+import { getConfig, getConfigBool } from "../helpers/runtimeConfig.js";
 
 const DEFAULT_TIMEZONE = "Asia/Kolkata";
-
-// Billing activation is event-driven (purchase/create). Cron only stops expired packages.
-const BILLING_EXPIRY_CRON_ENABLED = process.env.BILLING_CRON_ENABLED !== "false";
-const BILLING_EXPIRY_CRON_SCHEDULE =
-    process.env.BILLING_CRON_SCHEDULE || "5 0 * * *"; // 00:05 IST daily
 
 const schedule = (expression, fn, options = {}) => {
     return cron.schedule(expression, fn, {
@@ -32,8 +28,8 @@ export function startCronJobs() {
     });
 
     // Daily: stop AiSensy billing for expired packages only
-    if (BILLING_EXPIRY_CRON_ENABLED) {
-        schedule(BILLING_EXPIRY_CRON_SCHEDULE, async () => {
+    if (getConfigBool("billing_cron_enabled", true)) {
+        schedule(getConfig("billing_cron_schedule", "5 0 * * *"), async () => {
             try {
                 const result = await stopExpiredProjectBilling();
                 console.log(

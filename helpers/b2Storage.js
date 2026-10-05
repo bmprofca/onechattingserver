@@ -4,6 +4,7 @@ import crypto from "crypto";
 import mime from "mime";
 import axios from "axios";
 import { BASE_DOMAIN } from "./Config.js";
+import { getConfig, getConfigNumber } from "./runtimeConfig.js";
 
 let authCache = null;
 let bucketIdCache = null;
@@ -14,15 +15,15 @@ const MAX_DOWNLOAD_AUTH_TTL_SECONDS = 604800; // 7 days (B2 limit)
 
 export function isB2Enabled() {
     return !!(
-        process.env.B2_BUCKET &&
-        process.env.B2_ACCESS_KEY &&
-        process.env.B2_SECRET_KEY
+        getConfig("b2_bucket") &&
+        getConfig("b2_access_key") &&
+        getConfig("b2_secret_key")
     );
 }
 
 export function assertB2Configured() {
     if (!isB2Enabled()) {
-        throw new Error("Backblaze B2 storage is not configured. Set B2_BUCKET, B2_ACCESS_KEY, and B2_SECRET_KEY in .env");
+        throw new Error("Backblaze B2 storage is not configured. Set the B2 values in Admin settings.");
     }
 }
 
@@ -32,7 +33,7 @@ async function authorizeB2() {
     }
 
     const credentials = Buffer.from(
-        `${process.env.B2_ACCESS_KEY}:${process.env.B2_SECRET_KEY}`
+        `${getConfig("b2_access_key")}:${getConfig("b2_secret_key")}`
     ).toString("base64");
 
     const { data } = await axios.get(
@@ -63,16 +64,16 @@ async function getBucketId() {
         `${auth.apiUrl}/b2api/v2/b2_list_buckets`,
         {
             accountId: auth.accountId,
-            bucketName: process.env.B2_BUCKET,
+            bucketName: getConfig("b2_bucket"),
         },
         { headers: { Authorization: auth.authToken } }
     );
 
-    const bucket = data.buckets?.find((item) => item.bucketName === process.env.B2_BUCKET)
+    const bucket = data.buckets?.find((item) => item.bucketName === getConfig("b2_bucket"))
         || data.buckets?.[0];
 
     if (!bucket?.bucketId) {
-        throw new Error(`B2 bucket not found: ${process.env.B2_BUCKET}`);
+        throw new Error(`B2 bucket not found: ${getConfig("b2_bucket")}`);
     }
 
     bucketIdCache = bucket.bucketId;
@@ -103,19 +104,20 @@ export function buildChatMediaObjectKey(project_id, number, mediaType, fileName)
 }
 
 export function getB2PublicBaseUrl() {
-    if (process.env.B2_PUBLIC_URL) {
-        return process.env.B2_PUBLIC_URL.replace(/\/$/, "");
+    const publicUrl = getConfig("b2_public_url");
+    if (publicUrl) {
+        return publicUrl.replace(/\/$/, "");
     }
 
     if (authCache?.downloadUrl) {
-        return `${authCache.downloadUrl}/file/${process.env.B2_BUCKET}`;
+        return `${authCache.downloadUrl}/file/${getConfig("b2_bucket")}`;
     }
 
     return "";
 }
 
 function getDownloadAuthTtlSeconds() {
-    const configured = Number(process.env.B2_DOWNLOAD_AUTH_TTL_SECONDS);
+    const configured = getConfigNumber("b2_download_auth_ttl_seconds", 0);
     const ttl = Number.isFinite(configured) && configured > 0
         ? configured
         : DEFAULT_DOWNLOAD_AUTH_TTL_SECONDS;
@@ -179,7 +181,7 @@ export async function getSignedB2FileUrl(objectKey) {
     const downloadToken = await getDownloadAuthorization(objectKey);
     const encodedPath = encodeB2FilePath(objectKey);
 
-    return `${auth.downloadUrl}/file/${process.env.B2_BUCKET}/${encodedPath}?Authorization=${encodeURIComponent(downloadToken)}`;
+    return `${auth.downloadUrl}/file/${getConfig("b2_bucket")}/${encodedPath}?Authorization=${encodeURIComponent(downloadToken)}`;
 }
 
 /**

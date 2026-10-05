@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-import { ONECHATTING_SEND_URL, ONECHATTING_SEND_TOKEN } from './Config.js';
+import { getConfig } from './runtimeConfig.js';
 import { formatIndianMobileForSend } from './mobile.js';
 
 const templates = {
@@ -62,7 +62,7 @@ const postTemplateMessage = async (url, payload, token) =>
     });
 
 const sendTemplateMessage = async ({ templateName, mobile, params = [], headerMedia, }) => {
-    const token = String(ONECHATTING_SEND_TOKEN ?? '').trim();
+    const token = String(getConfig('onechatting_send_token') ?? '').trim();
 
     if (!token) {
         throw new Error('ONECHATTING_TEMPLATE_TOKEN is required');
@@ -86,7 +86,7 @@ const sendTemplateMessage = async ({ templateName, mobile, params = [], headerMe
 
     try {
         const response = await postTemplateMessage(
-            ONECHATTING_SEND_URL,
+            getConfig('onechatting_send_url'),
             payload,
             token
         );

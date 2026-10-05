@@ -36,6 +36,7 @@ import publicWebsiteRouter from "./publicRoutes/website.js";
 import websiteAdminRouter from "./routes/websiteAdmin.js";
 import settingsAdminRouter from "./routes/settingsAdmin.js";
 import { ensureDeviceTokenTable } from "./helpers/fcm.js";
+import { getConfig, getConfigBool, getConfigNumber, loadRuntimeConfig } from "./helpers/runtimeConfig.js";
 
 const app = express();
 
@@ -237,26 +238,31 @@ app.get("/health", (req, res) => {
 });
 
 
-if (process.env.GENERATE_DB_SUMMARY === "true") {
-    generateSummary();
-}
-
 const PORT = 6540;
 server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Server running on port ${PORT}`);
 
+    try {
+        await loadRuntimeConfig();
+    } catch (error) {
+        console.error(`Runtime settings load failed: ${error.message}`);
+    }
+
+    if (getConfigBool("generate_db_summary", false)) {
+        generateSummary();
+    }
 
     if (isB2Enabled()) {
         try {
             await initB2Storage();
-            console.log(`📦 Chat media storage: Backblaze B2 (${process.env.B2_BUCKET})`);
+            console.log(`📦 Chat media storage: Backblaze B2 (${getConfig("b2_bucket")})`);
             console.log(`   Media proxy: /proxy/chat|templates/...`);
             console.log(`   Public URL base: ${getB2PublicBaseUrl()}`);
         } catch (error) {
             console.error(`⚠️  B2 initialization failed: ${error.message}`);
         }
     } else {
-        console.log("⚠️  B2 not configured — chat media uploads will fail until B2 env vars are set");
+        console.log("⚠️  B2 not configured — set the storage settings in Admin");
     }
 
     try {
@@ -267,7 +273,7 @@ server.listen(PORT, '0.0.0.0', async () => {
 
     startCronJobs();
     startWebhookQueueDaemon({
-        intervalMs: Number(process.env.WEBHOOK_QUEUE_INTERVAL_MS) || 3000,
+        intervalMs: getConfigNumber("webhook_queue_interval_ms", 3000),
     });
 });
 

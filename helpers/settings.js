@@ -1,5 +1,8 @@
 import pool from "../db.js";
-import { TIMESTAMP } from "./function.js";
+
+function timestamp() {
+    return new Date().toISOString().slice(0, 19).replace("T", " ");
+}
 
 let settingsReadyPromise = null;
 
@@ -87,7 +90,7 @@ export async function upsertSetting(payload, id = null) {
         return { error: "A valid setting key is required" };
     }
 
-    const valueType = ["text", "textarea", "number", "boolean"].includes(payload.value_type)
+    const valueType = ["text", "textarea", "number", "boolean", "secret"].includes(payload.value_type)
         ? payload.value_type
         : "text";
     const values = [
@@ -98,7 +101,7 @@ export async function upsertSetting(payload, id = null) {
         valueType,
         payload.is_public === true || payload.is_public === 1 || payload.is_public === "1" ? 1 : 0,
         Number.parseInt(payload.sort_order, 10) || 0,
-        TIMESTAMP(),
+        timestamp(),
     ];
 
     if (id) {

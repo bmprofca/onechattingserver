@@ -1,7 +1,7 @@
 import axios from "axios";
 import pool from "../db.js";
 import { fileTypeFromBuffer } from "file-type";
-import { TURNSTILE_SECRET_KEY } from "./Config.js";
+import { getConfig } from "./runtimeConfig.js";
 import path from "path";
 import {
     getChatMediaKeyPrefix,
@@ -407,7 +407,7 @@ const validateTurnstileToken = async (token, remoteip = null) => {
         return false;
     }
     try {
-        const data = { secret: TURNSTILE_SECRET_KEY, response: token };
+        const data = { secret: getConfig("turnstile_secret_key"), response: token };
         if (remoteip) data.remoteip = remoteip;
 
         const { data: result } = await axios.post(

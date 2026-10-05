@@ -1,15 +1,10 @@
 import axios from 'axios';
 
-import {
-  FAST2SMS_API_KEY,
-  FAST2SMS_SENDER_ID,
-  FAST2SMS_URL,
-  FAST2SMS_OTP_TEMPLATE,
-} from './Config.js';
+import { getConfig } from './runtimeConfig.js';
 import { formatIndianMobileForSend } from './mobile.js';
 
 export function isSmsConfigured() {
-  return Boolean(FAST2SMS_API_KEY && FAST2SMS_URL && FAST2SMS_OTP_TEMPLATE);
+  return Boolean(getConfig('fast2sms_api_key') && getConfig('fast2sms_url') && getConfig('fast2sms_otp_template'));
 }
 
 /**
@@ -24,17 +19,17 @@ export async function sendOtpSms(mobile, otp) {
   }
 
   const { data } = await axios.post(
-    FAST2SMS_URL,
+    getConfig('fast2sms_url'),
     {
       route: 'dlt',
-      sender_id: FAST2SMS_SENDER_ID,
-      message: FAST2SMS_OTP_TEMPLATE,
+      sender_id: getConfig('fast2sms_sender_id'),
+      message: getConfig('fast2sms_otp_template'),
       variables_values: `${otp}|`,
       numbers: formatIndianMobileForSend(mobile),
     },
     {
       headers: {
-        authorization: FAST2SMS_API_KEY,
+        authorization: getConfig('fast2sms_api_key'),
         'Content-Type': 'application/json',
       },
     },

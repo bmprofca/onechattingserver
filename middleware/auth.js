@@ -1,9 +1,15 @@
 import pool from "../db.js";
 import { TODAY_DATE } from "../helpers/function.js";
 import { stopProjectBilling } from "../helpers/aisensyBilling.js";
+import { getConfigNumber } from "../helpers/runtimeConfig.js";
 
-const TOKEN_CACHE_TTL_MS = Number(process.env.AUTH_CACHE_TTL_MS) || 5 * 60 * 1000;
-const PROJECT_MAPPING_CACHE_TTL_MS = Number(process.env.PROJECT_MAPPING_CACHE_TTL_MS) || 2 * 60 * 1000;
+function authCacheTtl() {
+    return getConfigNumber("auth_cache_ttl_ms", 5 * 60 * 1000);
+}
+
+function projectMappingCacheTtl() {
+    return getConfigNumber("project_mapping_cache_ttl_ms", 2 * 60 * 1000);
+}
 const PROJECT_VALIDITY_CACHE_TTL_MS = Number(process.env.PROJECT_VALIDITY_CACHE_TTL_MS) || 2 * 60 * 1000;
 const TOKEN_CACHE_MAX_SIZE = 500;
 const tokenCache = new Map();
@@ -45,7 +51,7 @@ async function checkToken(username, token) {
         );
 
         const isValid = rows.length === 1 && rows[0]?.user_status === "1";
-        setCachedValue(tokenCache, cacheKey, isValid, TOKEN_CACHE_TTL_MS, TOKEN_CACHE_MAX_SIZE);
+        setCachedValue(tokenCache, cacheKey, isValid, authCacheTtl(), TOKEN_CACHE_MAX_SIZE);
         return isValid;
     } catch (err) {
         console.error("Token check error:", err);
@@ -83,7 +89,7 @@ async function CheckUserProjectMaping(username, project_id) {
     );
 
     const isMapped = row.length === 1;
-    setCachedValue(projectMappingCache, cacheKey, isMapped, PROJECT_MAPPING_CACHE_TTL_MS);
+    setCachedValue(projectMappingCache, cacheKey, isMapped, projectMappingCacheTtl());
     return isMapped;
 }
 

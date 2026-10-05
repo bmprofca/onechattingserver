@@ -1,15 +1,34 @@
 import nodemailer from "nodemailer";
-import { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM, SITE_NAME, SITE_LOGO, APP_DOMAIN } from "./Config.js";
+import { SITE_NAME, SITE_LOGO, APP_DOMAIN } from "./Config.js";
+import { getConfig, getConfigBool } from "./runtimeConfig.js";
 
-const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: parseInt(SMTP_PORT, 10),
-    secure: !!SMTP_SECURE,
-    auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS
+let transporter = null;
+let transporterKey = "";
+
+function getTransporter() {
+    const host = getConfig("smtp_host");
+    const port = getConfig("smtp_port", "465");
+    const user = getConfig("smtp_user");
+    const pass = getConfig("smtp_pass");
+    const secure = getConfigBool("smtp_secure", true);
+    const key = `${host}|${port}|${user}|${pass}|${secure}`;
+    if (!transporter || transporterKey !== key) {
+        transporterKey = key;
+        transporter = nodemailer.createTransport({
+            host,
+            port: parseInt(port, 10),
+            secure,
+            auth: { user, pass },
+        });
     }
-});
+    return transporter;
+}
+
+function smtpFromAddress(siteName) {
+    const from = getConfig("smtp_from");
+    const user = getConfig("smtp_user");
+    return from || (user ? `"${siteName}" <${user}>` : `"${siteName}"`);
+}
 
 /**
  * Get HTML template for password reset email
@@ -86,10 +105,10 @@ export async function sendPasswordResetEmail(to, resetToken, userName = "User") 
     const html = getPasswordResetEmailHtml(resetLink, userName);
 
     const siteName = SITE_NAME || "OneChatting";
-    const from = SMTP_FROM || (SMTP_USER ? `"${siteName}" <${SMTP_USER}>` : `"${siteName}"`);
+    const from = smtpFromAddress(siteName);
 
     try {
-        await transporter.sendMail({
+        await getTransporter().sendMail({
             from,
             to,
             subject: `Reset Your Password - ${siteName}`,
@@ -156,12 +175,12 @@ function getAgentInvitationEmailHtml(userName, projectName, inviterName) {
 
 export async function sendAgentInvitationEmail(to, userName, projectName, inviterName) {
     const siteName = SITE_NAME || "OneChatting";
-    const from = SMTP_FROM || (SMTP_USER ? `"${siteName}" <${SMTP_USER}>` : `"${siteName}"`);
+    const from = smtpFromAddress(siteName);
     const panelLink = `${(APP_DOMAIN || "").replace(/\/$/, "")}/login`;
     const html = getAgentInvitationEmailHtml(userName, projectName, inviterName);
 
     try {
-        await transporter.sendMail({
+        await getTransporter().sendMail({
             from,
             to,
             subject: `Invitation to join ${projectName} - ${siteName}`,

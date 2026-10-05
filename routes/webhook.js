@@ -1172,10 +1172,7 @@ async function DebitBalance(wamid, category) {
 }
 
 
-// Wallet topup webhook — gateway selected via ACTIVE_GATEWAY in helpers/paymentGateway.js
-// Zwitch:   { status: "captured", payment_token: { id } }
-// Razorpay: { event: "payment.captured", payload: { payment: { entity: { ... } } } }
-// Cashfree: { type: "PAYMENT_SUCCESS_WEBHOOK", data: { order: { order_id }, payment: { ... } } }
+// Razorpay wallet topup: { event: "payment.captured", payload: { payment: { entity } } }
 router.post("/wallet-topup", async (req, res) => {
     await saveWebhookToTest(
         "wallet-topup",
@@ -1184,7 +1181,6 @@ router.post("/wallet-topup", async (req, res) => {
             path: req.originalUrl,
             method: req.method,
             headers: {
-                "x-webhook-signature": req.headers["x-webhook-signature"] || null,
                 "x-razorpay-signature": req.headers["x-razorpay-signature"] || null,
             },
         })

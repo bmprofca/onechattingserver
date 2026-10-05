@@ -1,6 +1,7 @@
 import express from "express";
 import { getAdminByToken } from "../helpers/adminDb.js";
 import { deleteSetting, listSettings, upsertSetting } from "../helpers/settings.js";
+import { isManagedSetting, refreshRuntimeConfig } from "../helpers/runtimeConfig.js";
 
 const router = express.Router();
 
@@ -36,7 +37,10 @@ router.use(authAdmin);
 router.get("/", async (req, res) => {
     try {
         const group = String(req.query.group || "").trim();
-        const settings = await listSettings(group ? { group } : {});
+        const settings = (await listSettings(group ? { group } : {})).map((item) => ({
+            ...item,
+            system: isManagedSetting(item.setting_key),
+        }));
         return res.status(200).json({ error: false, settings });
     } catch (error) {
         console.error("admin settings list error:", error);
@@ -48,7 +52,8 @@ router.post("/", async (req, res) => {
     try {
         const setting = await upsertSetting(req.body || {});
         if (setting?.error) return res.status(400).json({ error: setting.error });
-        return res.status(200).json({ error: false, setting, msg: "Setting saved" });
+        await refreshRuntimeConfig();
+        return res.status(200).json({ error: false, setting: { ...setting, system: isManagedSetting(setting.setting_key) }, msg: "Setting saved" });
     } catch (error) {
         console.error("admin settings save error:", error);
         return res.status(500).json({ error: "Failed to save setting" });
@@ -62,7 +67,8 @@ router.put("/:id", async (req, res) => {
             const status = setting.error === "Setting not found" ? 404 : 400;
             return res.status(status).json({ error: setting.error });
         }
-        return res.status(200).json({ error: false, setting, msg: "Setting saved" });
+        await refreshRuntimeConfig();
+        return res.status(200).json({ error: false, setting: { ...setting, system: isManagedSetting(setting.setting_key) }, msg: "Setting saved" });
     } catch (error) {
         console.error("admin settings update error:", error);
         return res.status(500).json({ error: "Failed to save setting" });
@@ -71,7 +77,12 @@ router.put("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
     try {
+        const existing = (await listSettings()).find((item) => String(item.id) === String(req.params.id));
+        if (existing && isManagedSetting(existing.setting_key)) {
+            return res.status(400).json({ error: "This system setting cannot be deleted" });
+        }
         await deleteSetting(req.params.id);
+        await refreshRuntimeConfig();
         return res.status(200).json({ error: false, msg: "Setting deleted" });
     } catch (error) {
         console.error("admin settings delete error:", error);
