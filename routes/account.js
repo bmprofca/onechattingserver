@@ -15,7 +15,7 @@ import { deleteDeviceToken, saveDeviceToken } from "../helpers/fcm.js";
 import fs from "fs";
 import path from "path";
 
-const REVIEW_MOBILE = "9999999999";
+const REVIEW_MOBILE = "9876543210";
 const REVIEW_OTP = "123456";
 
 function isReviewMobile(mobile) {
