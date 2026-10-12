@@ -869,7 +869,7 @@ router.post("/create-project", auth, async (req, res) => {
 
         let business_id;
         let business_email = GENERATE_EMAIL_ADDRESS();
-        let business_password = GENERATE_PASSWORD(8);
+        let business_password = GENERATE_PASSWORD(16);
 
 
         const activeProvider = await getActiveTechProvider();
