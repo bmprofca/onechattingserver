@@ -455,7 +455,7 @@ router.post("/set-access", auth, async (req, res) => {
         setting_access == null || setting_access === '' ||
         chat_assign_access == null || chat_assign_access === ''
     ) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -530,7 +530,7 @@ router.post("/delete", auth, async (req, res) => {
     const permission_id = decrypt.permission_id;
 
     if (!project_id || !permission_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);

@@ -29,11 +29,14 @@ export async function initiateWalletTopup({
     order_id,
     username,
     amount,
+    payable,
+    surcharge = 0,
     mobile,
     email,
     name,
 }) {
-    const amountPaise = Math.round(Number(amount) * 100);
+    const charge = payable != null ? Number(payable) : Number(amount);
+    const amountPaise = Math.round(charge * 100);
 
     const { data } = await axios.post(
         "https://api.razorpay.com/v1/orders",
@@ -45,6 +48,9 @@ export async function initiateWalletTopup({
                 username,
                 name,
                 type: "wallet topup",
+                credit: String(amount),
+                surcharge: String(surcharge),
+                payable: String(charge),
             },
         },
         { auth: razorpayAuth() }
@@ -127,6 +133,7 @@ export async function processWalletTopupWebhook(req) {
     const order_id = db_data?.order_id;
     const db_amount = db_data?.amount;
     const username = db_data?.username;
+    const charged = db_data?.payable != null && db_data.payable !== "" ? db_data.payable : db_amount;
 
     const { data: apiData } = await axios.get(
         `https://api.razorpay.com/v1/payments/${razorpay_payment_id}`,
@@ -141,7 +148,7 @@ export async function processWalletTopupWebhook(req) {
         return { status: 200, body: { error: "Order mismatch" } };
     }
 
-    const expectedPaise = Math.round(Number(db_amount) * 100);
+    const expectedPaise = Math.round(Number(charged) * 100);
     if (Number(apiData?.amount) !== expectedPaise) {
         return { status: 200, body: { error: "Amount mismatch" } };
     }

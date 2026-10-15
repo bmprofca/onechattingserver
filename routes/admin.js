@@ -799,7 +799,7 @@ router.get('/projects/:project_id/meta-details', async (req, res) => {
         if (!project_id) {
             return res
                 .status(200)
-                .json({ error: 'Provide all mandetory fields' });
+                .json({ error: 'Provide all mandatory fields' });
         }
 
         const localProject = await getProjectById(project_id);

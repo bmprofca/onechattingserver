@@ -270,7 +270,7 @@ router.post("/submit-waba-id", auth, async (req, res) => {
     const phone_number_id = decrypt?.phone_number_id;
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     // CHECK IF PROJECT IS OWNER OF THE USER
@@ -372,7 +372,7 @@ router.post("/waba-information", auth, async (req, res) => {
     const project_id = decrypt.project_id;
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -445,7 +445,7 @@ router.post("/dashboard", auth, async (req, res) => {
     const project_id = decrypt.project_id;
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const [contact_row] = await pool.query("SELECT * FROM contacts WHERE project_id = ? AND is_deleted = ?", [project_id, '0']);
@@ -549,7 +549,7 @@ router.post("/info", auth, async (req, res) => {
     const project_id = decrypt.project_id;
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const [admin_row] = await pool.query("SELECT * FROM `project_mapping` WHERE `project_id` = ? AND `type` = ? AND `is_deleted` = ?", [project_id, 'admin', '0']);
@@ -658,7 +658,7 @@ router.post("/meta-details", auth, async (req, res) => {
 
         const project_id = decrypt?.project_id;
         if (!project_id) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
         // NOTE: username is not used right now but kept for future access control
@@ -1376,7 +1376,7 @@ router.post("/update-waba-profile-picture", auth, async (req, res) => {
 
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const project_token = await GetAiSensyProjectToken(project_id);
@@ -1465,7 +1465,7 @@ router.post("/update-waba-profile-details", auth, async (req, res) => {
     const profile_picture = decrypt.profile_picture || "";
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -1532,7 +1532,7 @@ router.post("/auto-case-create-status", auth, async (req, res) => {
         const project_id = decrypt.project_id;
 
         if (!project_id) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
 
@@ -1594,7 +1594,7 @@ router.post("/update-auto-case-create", auth, async (req, res) => {
         const action = decrypt.action || "deactive";
 
         if (!project_id || !action) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
 

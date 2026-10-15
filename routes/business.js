@@ -27,7 +27,7 @@ router.post("/create-business", auth, async (req, res) => {
     const project_mobile = decrypt.project_mobile;
 
     if (!project_email || !company_name || !website || !project_mobile) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const project_password = GENERATE_PASSWORD(8);

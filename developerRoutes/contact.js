@@ -68,7 +68,7 @@ router.post("/bulk-upsert", developerSendMessageAuth, async (req, res) => {
             msg: "Bulk contact upsert accepted and is processing in the background",
             job_id,
             total,
-            status_url: `/developer/contact/bulk-upsert-status?job_id=${job_id}`,
+            status_url: `/developer/v1/contacts/bulk/${job_id}`,
         });
     } catch (error) {
         return res.status(200).json({

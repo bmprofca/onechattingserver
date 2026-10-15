@@ -22,6 +22,70 @@ function isReviewMobile(mobile) {
     return String(mobile || "").replace(/\D/g, "") === REVIEW_MOBILE;
 }
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+let otpPurposeReady = null;
+function ensureOtpPurposeColumn() {
+    if (!otpPurposeReady) {
+        otpPurposeReady = (async () => {
+            const [rows] = await pool.query(
+                `SELECT COLUMN_NAME AS name
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'otp_verifications'
+                   AND COLUMN_NAME = 'purpose'`
+            );
+            if (!rows.length) {
+                await pool.query("ALTER TABLE otp_verifications ADD COLUMN purpose VARCHAR(32) NULL");
+            }
+        })().catch((error) => {
+            otpPurposeReady = null;
+            throw error;
+        });
+    }
+    return otpPurposeReady;
+}
+
+function maskMobile(mobile) {
+    const digits = String(mobile || "").replace(/\D/g, "");
+    if (digits.length <= 4) return digits;
+    return `${"•".repeat(digits.length - 4)}${digits.slice(-4)}`;
+}
+
+async function issueMobileOtp(mobile, purpose) {
+    await ensureOtpPurposeColumn();
+    const reviewLogin = isReviewMobile(mobile);
+    const otp = reviewLogin ? REVIEW_OTP : Math.floor(100000 + Math.random() * 900000).toString();
+    const expire_date = FUTURE_TIMESTAMP(reviewLogin ? 525600 : 10);
+    if (!reviewLogin) console.log("OTP", otp);
+    await pool.query(
+        "INSERT INTO otp_verifications (mobile, otp, expire_date, status, purpose) VALUES (?, ?, ?, 'pending', ?)",
+        [mobile, otp, expire_date, purpose]
+    );
+    if (!reviewLogin) {
+        try {
+            await sendOtpWhatsApp(mobile, otp);
+            await sendOtpSms(mobile, otp);
+        } catch (error) {
+            console.error("Failed to send OTP:", error);
+        }
+    }
+}
+
+function profilePayload(user) {
+    return {
+        name: user?.name,
+        country_code: user?.country_code,
+        mobile: user?.mobile,
+        email: user?.email || "",
+        gender: user?.gender,
+        firm_name: user?.firm_name,
+        business_name: user?.business_name,
+        business_type: user?.business_type,
+        profile_picture: user?.profile_picture || "",
+    };
+}
+
 router.post("/send-otp", async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) {
         var data = req.body?.data || '';
@@ -62,9 +126,10 @@ router.post("/send-otp", async (req, res) => {
     const expire_date = FUTURE_TIMESTAMP(reviewLogin ? 525600 : 10);
     if (!reviewLogin) console.log("OTP", otp);
 
+    await ensureOtpPurposeColumn();
     const conn = await pool.getConnection();
     try {
-        await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status) VALUES (?, ?, ?, 'pending')", [mobile, otp, expire_date]);
+        await conn.query("INSERT INTO otp_verifications (mobile, otp, expire_date, status, purpose) VALUES (?, ?, ?, 'pending', ?)", [mobile, otp, expire_date, purpose]);
         await conn.commit();
 
         if (!reviewLogin) {
@@ -106,9 +171,10 @@ router.post("/login", async (req, res) => {
     }
 
     const reviewLogin = isReviewMobile(mobile) && String(otp) === REVIEW_OTP;
+    await ensureOtpPurposeColumn();
     const [otp_row] = reviewLogin
         ? [[]]
-        : await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
+        : await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() AND (purpose IS NULL OR purpose = 'login') ORDER BY id DESC LIMIT 1", [mobile, otp]);
 
     if (!reviewLogin && otp_row.length === 0) {
         return res.status(200).json({ error: 'Invalid or expired OTP' });
@@ -194,14 +260,15 @@ router.post("/register", async (req, res) => {
     const email = String(decrypt.email || '').trim();
 
     if (!name || !mobile || !country_code || !otp) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return res.status(200).json({ error: 'Enter a valid email' });
     }
 
-    const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1", [mobile, otp]);
+    await ensureOtpPurposeColumn();
+    const [otp_row] = await pool.query("SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND status = 'pending' AND expire_date > NOW() AND (purpose IS NULL OR purpose = 'signup') ORDER BY id DESC LIMIT 1", [mobile, otp]);
 
     if (otp_row.length === 0) {
         return res.status(200).json({ error: 'Invalid or expired OTP' });
@@ -401,53 +468,142 @@ router.post("/edit-profile", auth, async (req, res) => {
     }
 
     const username = req.headers["username"] ? req.headers["username"] : '';
-    const name = decrypt?.name;
-    const mobile = decrypt?.mobile;
+    const name = String(decrypt?.name || '').trim();
     const gender = decrypt?.gender;
-    const country_code = decrypt?.country_code;
-    const firm_name = decrypt?.firm_name;
-    const business_name = decrypt?.business_name;
+    const firm_name = String(decrypt?.firm_name || '').trim();
+    const business_name = String(decrypt?.business_name || '').trim();
     const business_type = decrypt?.business_type;
     const profile_picture = decrypt?.profile_picture !== undefined ? decrypt.profile_picture : null;
+    const emailProvided = Object.prototype.hasOwnProperty.call(decrypt, 'email');
+    const email = emailProvided ? String(decrypt.email || '').trim() : undefined;
 
-    if (!name || !mobile || !gender || !country_code || !firm_name || !business_name || !business_type) {
+    if (!name || !gender || !firm_name || !business_name || !business_type) {
         return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
+    if (email === '') {
+        return res.status(200).json({ error: 'Confirm the code sent to your mobile to remove your email' });
+    }
+
+    if (email && !EMAIL_PATTERN.test(email)) {
+        return res.status(200).json({ error: 'Enter a valid email' });
+    }
+
     try {
-        if (profile_picture !== null) {
-            await pool.query(
-                "UPDATE `users` SET `name`=?,`country_code`=?,`mobile`=?,`gender`=?,`firm_name`=?,`business_name`=?,`business_type`=?,`profile_picture`=?,`modify_date`=?,`modify_by`=? WHERE username = ?",
-                [name, country_code, mobile, gender, firm_name, business_name, business_type, profile_picture, TIMESTAMP(), username, username]
+        if (email) {
+            const [duplicate] = await pool.query(
+                "SELECT username FROM users WHERE email = ? AND username <> ? LIMIT 1",
+                [email, username]
             );
-        } else {
-            await pool.query(
-                "UPDATE `users` SET `name`=?,`country_code`=?,`mobile`=?,`gender`=?,`firm_name`=?,`business_name`=?,`business_type`=?,`modify_date`=?,`modify_by`=? WHERE username = ?",
-                [name, country_code, mobile, gender, firm_name, business_name, business_type, TIMESTAMP(), username, username]
-            );
+            if (duplicate.length) {
+                return res.status(200).json({ error: 'This email is already used by another account' });
+            }
         }
+
+        const fields = ["`name`=?", "`gender`=?", "`firm_name`=?", "`business_name`=?", "`business_type`=?", "`modify_date`=?", "`modify_by`=?"];
+        const params = [name, gender, firm_name, business_name, business_type, TIMESTAMP(), username];
+        if (email !== undefined) {
+            fields.push("`email`=?");
+            params.push(email);
+        }
+        if (profile_picture !== null) {
+            fields.push("`profile_picture`=?");
+            params.push(profile_picture);
+        }
+        params.push(username);
+        await pool.query(`UPDATE \`users\` SET ${fields.join(", ")} WHERE username = ?`, params);
 
         const new_data = await USER_DATA(username);
 
         return res.status(200).json({
             error: false,
-            profile: {
-                name: new_data?.name,
-                country_code: new_data?.country_code,
-                mobile: new_data?.mobile,
-                email: new_data?.email,
-                gender: new_data?.gender,
-                firm_name: new_data?.firm_name,
-                business_name: new_data?.business_name,
-                business_type: new_data?.business_type,
-                profile_picture: new_data?.profile_picture || "",
-            },
+            profile: profilePayload(new_data),
             msg: 'Profile updated successfully'
         })
     } catch (error) {
         return res.status(200).json({
             error: 'Failed to update profile'
         })
+    }
+});
+
+router.post("/email/remove-otp", auth, async (req, res) => {
+    const username = req.headers["username"] ? String(req.headers["username"]) : '';
+    const user = await USER_DATA(username);
+    if (!user) {
+        return res.status(200).json({ error: 'User not found' });
+    }
+    if (!String(user.email || '').trim()) {
+        return res.status(200).json({ error: 'There is no email on this account' });
+    }
+    if (!user.mobile) {
+        return res.status(200).json({ error: 'This account has no mobile number' });
+    }
+
+    try {
+        await issueMobileOtp(user.mobile, 'email_remove');
+        return res.status(200).json({
+            error: false,
+            msg: 'OTP sent successfully',
+            mobile_hint: maskMobile(user.mobile),
+            country_code: user.country_code || '',
+        });
+    } catch (error) {
+        console.error("Email remove OTP error:", error);
+        return res.status(200).json({ error: 'Failed to send OTP' });
+    }
+});
+
+router.post("/email/remove", auth, async (req, res) => {
+    if (req.body && Object.keys(req.body).length > 0) {
+        var data = req.body?.data || '';
+        var key = req.body?.key || '';
+    }
+
+    const decrypt = Decrypt(data, key);
+    if (!decrypt) {
+        return res.status(200).json({ error: 'Failed to decrypt data' });
+    }
+
+    const otp = String(decrypt.otp || '').trim();
+    if (!otp) {
+        return res.status(200).json({ error: 'Enter the code sent to your mobile' });
+    }
+
+    const username = req.headers["username"] ? String(req.headers["username"]) : '';
+    const user = await USER_DATA(username);
+    if (!user?.mobile) {
+        return res.status(200).json({ error: 'This account has no mobile number' });
+    }
+    if (!String(user.email || '').trim()) {
+        return res.status(200).json({ error: 'There is no email on this account' });
+    }
+
+    try {
+        await ensureOtpPurposeColumn();
+        const [otp_row] = await pool.query(
+            "SELECT * FROM otp_verifications WHERE mobile = ? AND otp = ? AND purpose = 'email_remove' AND status = 'pending' AND expire_date > NOW() ORDER BY id DESC LIMIT 1",
+            [user.mobile, otp]
+        );
+        if (otp_row.length === 0) {
+            return res.status(200).json({ error: 'Invalid or expired OTP' });
+        }
+
+        await pool.query("UPDATE otp_verifications SET status = 'verified' WHERE id = ?", [otp_row[0].id]);
+        await pool.query(
+            "UPDATE `users` SET `email` = '', `modify_date` = ?, `modify_by` = ? WHERE username = ?",
+            [TIMESTAMP(), username, username]
+        );
+
+        const new_data = await USER_DATA(username);
+        return res.status(200).json({
+            error: false,
+            profile: profilePayload(new_data),
+            msg: 'Email removed',
+        });
+    } catch (error) {
+        console.error("Email remove error:", error);
+        return res.status(200).json({ error: 'Failed to remove email' });
     }
 });
 
@@ -597,7 +753,13 @@ router.get("/ai-bills", auth, async (req, res) => {
         const username = req.headers["username"];
         const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
         const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 100);
-        const projectId = String(req.query.project_id || '').trim();
+        const projectIds = [...new Set(
+            [req.query.project_ids, req.query.project_id]
+                .flat(Infinity)
+                .flatMap((value) => String(value || '').split(','))
+                .map((value) => value.trim())
+                .filter(Boolean)
+        )].slice(0, 50);
         const fromDate = String(req.query.from_date || '').trim();
         const toDate = String(req.query.to_date || '').trim();
         const validDate = /^\d{4}-\d{2}-\d{2}$/;
@@ -616,9 +778,12 @@ router.get("/ai-bills", auth, async (req, res) => {
         ];
         const params = [username];
 
-        if (projectId) {
+        if (projectIds.length === 1) {
             conditions.push('project_id = ?');
-            params.push(projectId);
+            params.push(projectIds[0]);
+        } else if (projectIds.length > 1) {
+            conditions.push(`project_id IN (${projectIds.map(() => '?').join(',')})`);
+            params.push(...projectIds);
         }
         if (fromDate) {
             conditions.push('DATE(create_date) >= ?');

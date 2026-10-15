@@ -7,6 +7,7 @@ import { auth } from "../middleware/auth.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import subscriptionDb from "../helpers/subscriptionDb.js";
 import { initiateWalletTopup } from "../helpers/paymentGateway.js";
+import { calculateWalletSurcharge, ensurePaymentOrderFeeColumns } from "../helpers/walletSurcharge.js";
 
 
 router.post("/transaction-history", auth, async (req, res) => {
@@ -293,6 +294,15 @@ const buildTransactionQuery = (username, from_date, to_date, transaction_type, t
     };
 };
 
+router.get("/wallet-surcharge", auth, async (req, res) => {
+    const quote = calculateWalletSurcharge(0);
+    return res.status(200).json({
+        error: false,
+        percent: quote.percent,
+        flat: quote.flat,
+    });
+});
+
 router.post("/wallet-topup", auth, async (req, res) => {
     const data = req.body?.data ?? '';
     const key = req.body?.key ?? '';
@@ -303,7 +313,11 @@ router.post("/wallet-topup", auth, async (req, res) => {
     }
 
     const username = req.headers["username"] ?? '';
-    const amount = decrypt.amount;
+    const quote = calculateWalletSurcharge(decrypt.amount);
+    if (!Number.isFinite(quote.credit) || quote.credit < 1) {
+        return res.status(200).json({ error: 'Enter a recharge amount of at least ₹1' });
+    }
+
     const user_data = await USER_DATA(username);
 
     const mobile = user_data?.mobile ?? '';
@@ -312,15 +326,18 @@ router.post("/wallet-topup", auth, async (req, res) => {
     const order_id = RANDOM_STRING(10);
 
     try {
+        await ensurePaymentOrderFeeColumns();
         await pool.query(
-            "INSERT INTO `payment_orders`(`order_id`, `username`, `create_date`, `create_by`, `modify_date`, `modify_by`, `amount`, `type`, `status`, `mobile`, `email`, `name`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            [order_id, username, TIMESTAMP(), username, TIMESTAMP(), username, amount, 'wallet topup', '0', mobile, email, name]
+            "INSERT INTO `payment_orders`(`order_id`, `username`, `create_date`, `create_by`, `modify_date`, `modify_by`, `amount`, `surcharge`, `payable`, `type`, `status`, `mobile`, `email`, `name`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [order_id, username, TIMESTAMP(), username, TIMESTAMP(), username, quote.credit, quote.surcharge, quote.payable, 'wallet topup', '0', mobile, email, name]
         );
 
         const result = await initiateWalletTopup({
             order_id,
             username,
-            amount,
+            amount: quote.credit,
+            payable: quote.payable,
+            surcharge: quote.surcharge,
             mobile,
             email,
             name,
@@ -330,6 +347,11 @@ router.post("/wallet-topup", auth, async (req, res) => {
         return res.status(200).json({
             error: false,
             ...result,
+            credit: quote.credit,
+            surcharge: quote.surcharge,
+            payable: quote.payable,
+            surcharge_percent: quote.percent,
+            surcharge_flat: quote.flat,
         });
     } catch (error) {
         console.log("[wallet-topup]", error?.response?.data ?? error.message);
@@ -394,7 +416,11 @@ router.post("/payment-status", auth, async (req, res) => {
             email: create_by_data?.email,
             status: create_by_data?.status == '1' ? true : false,
         },
-        amount: Number(payment_data?.amount)
+        amount: Number(payment_data?.amount),
+        surcharge: Number(payment_data?.surcharge || 0),
+        payable: payment_data?.payable != null && payment_data.payable !== ''
+            ? Number(payment_data.payable)
+            : Number(payment_data?.amount)
     })
 
 });

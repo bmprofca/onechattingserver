@@ -19,6 +19,7 @@ import {
 } from "../helpers/templateStorage.js";
 import { queryPaginatedMedia, resolveChatMediaFilter, normalizeChatNumber } from "../helpers/chatMedia.js";
 
+import { isTruthyFlag, toIdList, MAX_BULK_SELECTION } from "../helpers/bulkSelection.js";
 const router = express.Router();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -536,7 +537,7 @@ router.post("/check-chat-window", auth, async (req, res) => {
     const number = decrypt?.number;
 
     if (!project_id || !number) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -660,7 +661,7 @@ router.post("/send-text-message", auth, async (req, res) => {
     const reply_wamid = decrypt.reply_wamid || null;
 
     if (!project_id || !message || !number || !message) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (is_reply && !reply_wamid) {
@@ -863,7 +864,7 @@ router.post("/send-image-message", auth, async (req, res) => {
     const reply_wamid = decrypt?.reply_wamid || null;
 
     if (!project_id || !number || !image_link) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (is_reply && !reply_wamid) {
@@ -1041,7 +1042,7 @@ router.post("/send-video-message", auth, async (req, res) => {
     const reply_wamid = decrypt?.reply_wamid || null;
 
     if (!project_id || !number || !video_link) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (is_reply && !reply_wamid) {
@@ -1219,7 +1220,7 @@ router.post("/send-document-message", auth, async (req, res) => {
     const reply_wamid = decrypt?.reply_wamid || null;
 
     if (!project_id || !number || !document_link) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (is_reply && !reply_wamid) {
@@ -1415,7 +1416,7 @@ router.post("/send-audio-message", auth, async (req, res) => {
     }
 
     if (!project_id || !number || !audio_link) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (is_reply && !reply_wamid) {
@@ -1602,7 +1603,7 @@ router.post("/mark-as-read", auth, async (req, res) => {
     const number = decrypt?.number;
 
     if (!project_id || !number) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -1694,7 +1695,7 @@ router.post("/send-template", auth, async (req, res) => {
     const reply_wamid = decrypt.reply_wamid || null;
 
     if (!project_id || !component || !number || !template_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (is_reply && !reply_wamid) {
@@ -1911,7 +1912,7 @@ router.post("/chat-assign", auth, async (req, res) => {
     const target = decrypt?.target;
 
     if (!project_id || !type || !number) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -2077,7 +2078,7 @@ router.post("/total-unread-count", auth, async (req, res) => {
         const project_id = decrypt?.project_id;
 
         if (!project_id) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
 
@@ -2124,7 +2125,7 @@ router.post("/case-status", auth, async (req, res) => {
         const number = decrypt?.number;
 
         if (!project_id || !number) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
 
@@ -2174,7 +2175,7 @@ router.post("/open-case-count", auth, async (req, res) => {
         const number = decrypt?.number;
 
         if (!project_id || !number) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
 
@@ -2219,7 +2220,7 @@ router.post("/case-list", auth, async (req, res) => {
         const statusParam = (decrypt?.status ?? '').toString().trim().toLowerCase();
 
         if (!project_id) {
-            return res.status(200).json({ error: 'Provide all mandetory fields' });
+            return res.status(200).json({ error: 'Provide all mandatory fields' });
         }
 
         const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -2468,12 +2469,15 @@ router.post("/case-bulk-close", auth, async (req, res) => {
 
         const username = (req?.headers["username"] || '').toString().trim();
         const project_id = (decrypt?.project_id ?? '').toString().trim();
-        const case_ids = decrypt?.case_ids;
+        let case_ids = decrypt?.case_ids;
+        const select_all = isTruthyFlag(decrypt?.select_all);
+        const scope = (decrypt?.scope ?? 'open_numbers').toString();
 
         if (!project_id) {
             return res.status(200).json({ error: 'Provide all mandatory fields: project_id' });
         }
-        if (!Array.isArray(case_ids) || case_ids.length === 0) {
+        const explicitNumbers = toIdList(decrypt?.numbers);
+        if (!select_all && explicitNumbers.length === 0 && (!Array.isArray(case_ids) || case_ids.length === 0)) {
             return res.status(200).json({ error: 'Provide at least one case_id in case_ids array' });
         }
 
@@ -2482,21 +2486,103 @@ router.post("/case-bulk-close", auth, async (req, res) => {
             return res.status(200).json({ error: 'User is not assigned on the project' });
         }
 
+        if (!select_all && explicitNumbers.length > 0 && (!Array.isArray(case_ids) || case_ids.length === 0)) {
+            // Explicit contact numbers (selection may span pages): close all their open cases.
+            const [rows] = await pool.query(
+                "SELECT case_id FROM `cases` WHERE project_id = ? AND status = '0' AND number IN (?)",
+                [project_id, explicitNumbers]
+            );
+            case_ids = rows.map((r) => r.case_id);
+            if (case_ids.length === 0) {
+                return res.status(200).json({ error: 'No open cases found for the selected numbers' });
+            }
+        }
+
+        if (select_all) {
+            // Resolve the target cases on the server from the client's filters.
+            const filters = decrypt?.filters || {};
+            const search = (filters?.search ?? '').toString().trim();
+            const like = `%${search}%`;
+            if (scope === 'number_cases') {
+                // Every open case of one contact (case list modal), minus excluded case ids.
+                const number = (decrypt?.number ?? '').toString().trim();
+                if (!number) return res.status(200).json({ error: 'Provide number for this selection' });
+                let sql = "SELECT case_id FROM `cases` WHERE project_id = ? AND number = ? AND status = '0'";
+                const params = [project_id, number];
+                if (search) {
+                    sql += ' AND (number LIKE ? OR case_id LIKE ? OR name LIKE ?)';
+                    params.push(like, like, like);
+                }
+                const excluded = toIdList(decrypt?.excluded_ids);
+                if (excluded.length > 0) {
+                    sql += ' AND case_id NOT IN (?)';
+                    params.push(excluded);
+                }
+                sql += ' LIMIT ?';
+                params.push(MAX_BULK_SELECTION);
+                const [rows] = await pool.query(sql, params);
+                case_ids = rows.map((r) => r.case_id);
+            } else {
+                // Every open case of every number shown by /open-case-list with the same filters,
+                // minus excluded numbers.
+                const caseNameFilter = (filters?.case_name_filter ?? '').toString().trim();
+                const knownCaseNames = toIdList(filters?.known_case_names);
+                let where = "WHERE c.project_id = ? AND c.status = '0'";
+                const params = [project_id];
+                if (search) {
+                    where += ` AND (c.number LIKE ? OR c.case_id LIKE ? OR c.name LIKE ? OR c.remark LIKE ? OR ct.name LIKE ? OR ct.email LIKE ? OR ct.firm_name LIKE ? OR ct.website LIKE ? OR ct.remark LIKE ?)`;
+                    params.push(like, like, like, like, like, like, like, like, like);
+                }
+                if (caseNameFilter.toLowerCase() === 'others' && knownCaseNames.length > 0) {
+                    where += " AND COALESCE(c.name, '') NOT IN (?)";
+                    params.push(knownCaseNames);
+                } else if (caseNameFilter && caseNameFilter.toLowerCase() !== 'others') {
+                    where += ' AND c.name = ?';
+                    params.push(caseNameFilter);
+                }
+                const excludedNumbers = toIdList(decrypt?.excluded_ids);
+                if (excludedNumbers.length > 0) {
+                    where += ' AND c.number NOT IN (?)';
+                    params.push(excludedNumbers);
+                }
+                const [numberRows] = await pool.query(
+                    `SELECT DISTINCT c.number
+                     FROM cases c
+                     LEFT JOIN contacts ct ON ct.project_id = c.project_id AND ct.number = c.number AND ct.is_deleted = '0'
+                     ${where}
+                     LIMIT ?`,
+                    [...params, MAX_BULK_SELECTION]
+                );
+                const numbers = numberRows.map((r) => r.number).filter(Boolean);
+                if (numbers.length > 0) {
+                    const [rows] = await pool.query(
+                        "SELECT case_id FROM `cases` WHERE project_id = ? AND status = '0' AND number IN (?)",
+                        [project_id, numbers]
+                    );
+                    case_ids = rows.map((r) => r.case_id);
+                } else {
+                    case_ids = [];
+                }
+            }
+            if (!case_ids || case_ids.length === 0) {
+                return res.status(200).json({ error: 'No open cases match the current selection' });
+            }
+        }
+
         const sanitizedIds = case_ids.map(id => String(id).trim()).filter(Boolean);
         if (sanitizedIds.length === 0) {
             return res.status(200).json({ error: 'No valid case_ids provided' });
         }
 
-        const placeholders = sanitizedIds.map(() => '?').join(',');
         await pool.query(
-            "UPDATE cases SET modify_date = ?, modify_by = ?, status = '1' WHERE project_id = ? AND case_id IN (" + placeholders + ")",
-            [TIMESTAMP(), username, project_id, ...sanitizedIds]
+            "UPDATE cases SET modify_date = ?, modify_by = ?, status = '1' WHERE project_id = ? AND case_id IN (?)",
+            [TIMESTAMP(), username, project_id, sanitizedIds]
         );
 
         // Fetch distinct numbers for socket events
         const [affectedRows] = await pool.query(
-            "SELECT DISTINCT number FROM cases WHERE project_id = ? AND case_id IN (" + placeholders + ")",
-            [project_id, ...sanitizedIds]
+            "SELECT DISTINCT number FROM cases WHERE project_id = ? AND case_id IN (?)",
+            [project_id, sanitizedIds]
         );
 
         const [room_row] = await pool.query("SELECT * FROM \project_mapping\ WHERE project_id = ? AND is_deleted = ?", [project_id, '0']);
@@ -2515,7 +2601,7 @@ router.post("/case-bulk-close", auth, async (req, res) => {
         return res.status(200).json({
             error: false,
             closed_count: sanitizedIds.length,
-            msg: "Cases closed successfully"
+            msg: `${sanitizedIds.length} case(s) closed successfully`
         });
     } catch (error) {
         return res.status(200).json({ error: 'Failed to bulk close cases' });

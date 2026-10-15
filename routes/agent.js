@@ -33,7 +33,7 @@ router.post("/add", auth, async (req, res) => {
     const permission_id = decrypt.permission_id;
 
     if (!project_id || !permission_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (!mobile) {
@@ -146,7 +146,7 @@ router.post("/list", auth, async (req, res) => {
 
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -274,7 +274,7 @@ router.post("/change-permission", auth, async (req, res) => {
 
 
     if (!project_id || !mapping_id || !permission_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -338,7 +338,7 @@ router.post("/fetch-agent", auth, async (req, res) => {
 
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (!mobile) {
@@ -410,7 +410,7 @@ router.post("/delete", auth, async (req, res) => {
 
 
     if (!project_id || !mapping_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -475,7 +475,7 @@ router.post("/invitation/respond", auth, async (req, res) => {
     const action = String(decrypt.action || '').toLowerCase();
 
     if (!invitation_id || !['accept', 'reject'].includes(action)) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     await ensureAgentInvitationsTable();
@@ -544,7 +544,7 @@ router.post("/invitation/cancel", auth, async (req, res) => {
     const invitation_id = decrypt.invitation_id;
 
     if (!project_id || !invitation_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);

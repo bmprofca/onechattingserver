@@ -37,12 +37,14 @@ import websiteAdminRouter from "./routes/websiteAdmin.js";
 import settingsAdminRouter from "./routes/settingsAdmin.js";
 import { ensureDeviceTokenTable } from "./helpers/fcm.js";
 import { getConfig, getConfigBool, getConfigNumber, loadRuntimeConfig } from "./helpers/runtimeConfig.js";
+import { apiContract, notFoundHandler, errorHandler } from "./middleware/apiContract.js";
 
 const app = express();
 
 app.use(cors({
     origin: "*",
-    credentials: true
+    credentials: true,
+    exposedHeaders: ["X-Request-Id"]
 }));
 
 app.use(
@@ -55,6 +57,9 @@ app.use(
         },
     })
 );
+
+// API contract: plain JSON bodies and the standard response envelope (see helpers/apiResponse.js)
+app.use(apiContract);
 
 app.use(express.static("public"));
 
@@ -237,6 +242,9 @@ app.get("/health", (req, res) => {
     });
 });
 
+// Unknown routes and unhandled errors (must be registered after every route)
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 const PORT = 6540;
 server.listen(PORT, '0.0.0.0', async () => {

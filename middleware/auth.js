@@ -59,18 +59,57 @@ async function checkToken(username, token) {
     }
 }
 
+const bearerUsernameCache = new Map();
+
+/** Resolve the username that owns a login token (for `Authorization: Bearer <token>`). */
+async function usernameForToken(token) {
+    const cached = getCachedValue(bearerUsernameCache, token);
+    if (cached !== null) return cached;
+    try {
+        const [rows] = await pool.query(
+            "SELECT username FROM login_token WHERE token = ? AND status = '1' ORDER BY id DESC LIMIT 1",
+            [token]
+        );
+        const username = rows[0]?.username || "";
+        setCachedValue(bearerUsernameCache, token, username, authCacheTtl(), TOKEN_CACHE_MAX_SIZE);
+        return username;
+    } catch (err) {
+        console.error("Bearer token lookup error:", err);
+        return "";
+    }
+}
+
+function readBearerToken(req) {
+    const header = String(req.headers["authorization"] || "");
+    return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
+
+/**
+ * Session auth for app routes.
+ * Accepts `Authorization: Bearer <token>` or the older `token` + `username`
+ * headers. Route handlers keep reading req.headers.username.
+ * A missing or invalid session is HTTP 401.
+ */
 async function auth(req, res, next) {
-    const token = req.headers["token"] ? req.headers["token"] : "";
-    const username = req.headers["username"] ? req.headers["username"] : "";
+    let token = req.headers["token"] ? String(req.headers["token"]) : "";
+    let username = req.headers["username"] ? String(req.headers["username"]) : "";
+
+    const bearer = readBearerToken(req);
+    if (bearer && !token) {
+        token = bearer;
+        if (!username) username = await usernameForToken(bearer);
+        req.headers["token"] = token;
+        req.headers["username"] = username;
+    }
 
     if (!token || !username) {
-        return res.status(200).json({ error: "Session expired" });
+        return res.status(401).json({ error: "Session expired" });
     }
 
     const isValid = await checkToken(username, token);
 
     if (!isValid) {
-        return res.status(200).json({ error: "Session expired" });
+        return res.status(401).json({ error: "Session expired" });
     }
 
     next();

@@ -4,6 +4,9 @@ const DEVELOPER_AUTH_CACHE_TTL_MS = Number(process.env.DEVELOPER_AUTH_CACHE_TTL_
 const developerAuthCache = new Map();
 
 function getTokenFromHeader(req) {
+    // Developer API tokens: `Authorization: Bearer <token>` (preferred) or the legacy `token` header.
+    const auth = (req.headers["authorization"] || "").toString();
+    if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
     return (req.headers["token"] || "").toString().trim();
 }
 

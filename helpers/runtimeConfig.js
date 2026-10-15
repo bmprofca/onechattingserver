@@ -20,6 +20,8 @@ const MANAGED_SETTINGS = [
     { group: "payments", key: "razorpay_key_id", env: "RAZORPAY_KEY_ID", label: "Razorpay key ID", type: "text", sort: 10 },
     { group: "payments", key: "razorpay_key_secret", env: "RAZORPAY_KEY_SECRET", label: "Razorpay key secret", type: "secret", sort: 20 },
     { group: "payments", key: "razorpay_webhook_secret", env: "RAZORPAY_WEBHOOK_SECRET", label: "Razorpay webhook secret", type: "secret", sort: 30 },
+    { group: "payments", key: "wallet_surcharge_percent", env: "WALLET_SURCHARGE_PERCENT", label: "Wallet recharge surcharge (%)", type: "number", sort: 40, fallback: "0" },
+    { group: "payments", key: "wallet_surcharge_flat", env: "WALLET_SURCHARGE_FLAT", label: "Wallet recharge surcharge (₹)", type: "number", sort: 50, fallback: "0" },
 
     { group: "runtime", key: "db_connection_limit", env: "DB_CONNECTION_LIMIT", label: "DB connection limit (restart required)", type: "number", sort: 10, fallback: "5" },
     { group: "runtime", key: "auth_cache_ttl_ms", env: "AUTH_CACHE_TTL_MS", label: "Auth cache TTL (ms)", type: "number", sort: 20, fallback: "300000" },

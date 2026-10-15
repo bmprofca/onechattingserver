@@ -3,6 +3,7 @@ import pool from "../db.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
 import { RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, auditUserRecord } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
+import { isTruthyFlag, toIdList, MAX_BULK_SELECTION } from "../helpers/bulkSelection.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import * as XLSX from "xlsx";
 import fs from "node:fs";
@@ -10,6 +11,42 @@ import path from "node:path";
 
 
 const router = express.Router();
+
+const CONTACT_SEARCH_SQL = "(c.name LIKE ? OR c.number LIKE ? OR c.email LIKE ? OR c.firm_name LIKE ? OR c.website LIKE ? OR c.remark LIKE ?)";
+
+/**
+ * Resolve contact_ids for a "select all matching" bulk action using the same
+ * filters as /contact-list (query + favorites), minus excluded ids.
+ */
+async function resolveSelectedContactIds({ project_id, username, filters = {}, excluded_ids = [] }) {
+    const query = (filters?.query ?? filters?.search ?? '').toString().trim();
+    const favoritesOnly = isTruthyFlag(filters?.is_favorite_only);
+    const like = `%${query}%`;
+    const params = [];
+    let sql;
+    if (favoritesOnly) {
+        sql = `SELECT DISTINCT c.contact_id FROM contacts c
+               INNER JOIN favorite_contacts fc ON c.project_id = fc.project_id AND c.number = fc.number AND fc.username = ? AND fc.status = '1'
+               WHERE c.project_id = ? AND c.is_deleted = '0'`;
+        params.push(username, project_id);
+    } else {
+        sql = "SELECT c.contact_id FROM contacts c WHERE c.project_id = ? AND c.is_deleted = '0'";
+        params.push(project_id);
+    }
+    if (query) {
+        sql += ` AND ${CONTACT_SEARCH_SQL}`;
+        params.push(like, like, like, like, like, like);
+    }
+    const excluded = toIdList(excluded_ids);
+    if (excluded.length > 0) {
+        sql += " AND c.contact_id NOT IN (?)";
+        params.push(excluded);
+    }
+    sql += " LIMIT ?";
+    params.push(MAX_BULK_SELECTION);
+    const [rows] = await pool.query(sql, params);
+    return rows.map((r) => String(r.contact_id)).filter(Boolean);
+}
 
 router.post("/contact-list", auth, async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) { var data = req.body?.data || ""; var key = req.body?.key || ""; }
@@ -375,7 +412,7 @@ router.post("/create-contact", auth, async (req, res) => {
     const remark = decrypt?.remark;
 
     if (!project_id || !name || !number) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const [check_row] = await pool.query("SELECT * FROM `contacts` WHERE project_id = ? AND number = ? AND is_deleted = ?", [project_id, number, '0']);
@@ -449,7 +486,7 @@ router.post("/contact-details", auth, async (req, res) => {
     const full_number = decrypt?.number;
 
     if (!project_id || !full_number) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -527,7 +564,7 @@ router.post("/update-contact", auth, async (req, res) => {
     const remark = decrypt?.remark;
 
     if (!project_id || !name || !number || !contact_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
@@ -576,16 +613,17 @@ router.post("/delete-contact", auth, async (req, res) => {
         decrypt?.all_contact_delete === 1 ||
         decrypt?.all_contact_delete === '1';
 
-    const contact_ids = decrypt?.contact_ids || [];
+    let contact_ids = decrypt?.contact_ids || [];
     const numbers = decrypt?.numbers || [];
     const project_id = decrypt?.project_id;
+    const select_all = isTruthyFlag(decrypt?.select_all);
 
     if (!project_id) {
         return res.status(200).json({ error: 'project_id is required' });
     }
 
-    // Only validate contact_ids/numbers if all_contact_delete is false
-    if (!all_contact_delete) {
+    // Only validate contact_ids/numbers if neither all_contact_delete nor select_all is set
+    if (!all_contact_delete && !select_all) {
         const hasIds = Array.isArray(contact_ids) && contact_ids.length > 0;
         const hasNumbers = Array.isArray(numbers) && numbers.length > 0;
 
@@ -597,6 +635,19 @@ router.post("/delete-contact", auth, async (req, res) => {
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    if (select_all && !all_contact_delete) {
+        // Resolve every contact matching the client's current filters on the server.
+        contact_ids = await resolveSelectedContactIds({
+            project_id,
+            username,
+            filters: decrypt?.filters || {},
+            excluded_ids: decrypt?.excluded_ids || []
+        });
+        if (contact_ids.length === 0) {
+            return res.status(200).json({ error: 'No contacts match the current selection' });
+        }
     }
 
     try {
@@ -681,11 +732,11 @@ router.post("/mark-as-favorite", auth, async (req, res) => {
     const action = decrypt?.action;
 
     if (!project_id || !number || !action) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     if (action != 'add' && action != 'delete') {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -742,7 +793,7 @@ router.post("/create-group", auth, async (req, res) => {
     const remark = decrypt?.remark;
 
     if (!project_id || !name) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -795,14 +846,66 @@ router.post("/delete-group", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;
     const group_id = decrypt?.group_id;
+    const select_all = isTruthyFlag(decrypt?.select_all);
+    const group_ids = toIdList(decrypt?.group_ids);
+    const isBulk = select_all || group_ids.length > 0;
 
-    if (!project_id || !group_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+    if (!project_id || (!group_id && !isBulk)) {
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' })
+    }
+
+    if (isBulk) {
+        // Bulk delete: explicit group_ids, or every group matching the search (select_all).
+        // Groups that still contain contacts are skipped, matching the single-delete rule in the UI.
+        try {
+            let sql = `SELECT g.group_id,
+                              (SELECT COUNT(*) FROM contact_group_mapping m WHERE m.group_id = g.group_id AND m.is_deleted = '0') AS contact_count
+                       FROM contact_groups g
+                       WHERE g.project_id = ? AND g.is_deleted = '0'`;
+            const params = [project_id];
+            if (select_all) {
+                const search = (decrypt?.filters?.search ?? '').toString().trim();
+                if (search) {
+                    const like = `%${search}%`;
+                    sql += ' AND (g.name LIKE ? OR g.remark LIKE ?)';
+                    params.push(like, like);
+                }
+                const excluded = toIdList(decrypt?.excluded_ids);
+                if (excluded.length > 0) {
+                    sql += ' AND g.group_id NOT IN (?)';
+                    params.push(excluded);
+                }
+            } else {
+                sql += ' AND g.group_id IN (?)';
+                params.push(group_ids);
+            }
+            const [targets] = await pool.query(sql, params);
+            const deletable = targets.filter((t) => Number(t.contact_count) === 0).map((t) => t.group_id);
+            const skipped = targets.length - deletable.length;
+            if (deletable.length === 0) {
+                return res.status(200).json({
+                    error: skipped > 0 ? 'Selected groups still have contacts. Remove the contacts first.' : 'No groups match the current selection',
+                    skipped_count: skipped
+                });
+            }
+            const [result] = await pool.query(
+                "UPDATE `contact_groups` SET `modify_date`=?,`modify_by`=?,`is_deleted`=?,`delete_by`=? WHERE project_id = ? AND group_id IN (?)",
+                [TIMESTAMP(), username, '1', username, project_id, deletable]
+            );
+            return res.status(200).json({
+                error: false,
+                msg: `${result.affectedRows} group(s) deleted${skipped > 0 ? `, ${skipped} skipped because they still have contacts` : ''}`,
+                deleted_count: result.affectedRows,
+                skipped_count: skipped
+            });
+        } catch (error) {
+            return res.status(200).json({ error: 'Failed to delete groups', e: error?.message || error });
+        }
     }
 
 
@@ -843,7 +946,7 @@ router.post("/edit-group", auth, async (req, res) => {
     const remark = decrypt?.remark;
 
     if (!project_id || !group_id || !name) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -888,7 +991,7 @@ router.post("/group-contact-add", auth, async (req, res) => {
     const contact_id = decrypt?.contact_id;
 
     if (!project_id || !group_id || !contact_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -981,16 +1084,29 @@ router.post("/group-contact-add-bulk", auth, async (req, res) => {
         raw_group_ids = raw_group_ids !== undefined && raw_group_ids !== null && raw_group_ids !== '' ? [raw_group_ids] : [];
     }
 
-    const contact_ids = Array.from(new Set(raw_contact_ids.map(c => String(c)).filter(Boolean)));
+    let contact_ids = Array.from(new Set(raw_contact_ids.map(c => String(c)).filter(Boolean)));
     const group_ids = Array.from(new Set(raw_group_ids.map(g => String(g)).filter(Boolean)));
+    const select_all = isTruthyFlag(decrypt?.select_all);
 
-    if (!project_id || contact_ids.length === 0 || group_ids.length === 0) {
+    if (!project_id || (!select_all && contact_ids.length === 0) || group_ids.length === 0) {
         return res.status(200).json({ error: 'Provide project_id, group_ids, and contact_ids' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+
+    if (select_all) {
+        contact_ids = await resolveSelectedContactIds({
+            project_id,
+            username,
+            filters: decrypt?.filters || {},
+            excluded_ids: decrypt?.excluded_ids || []
+        });
+        if (contact_ids.length === 0) {
+            return res.status(200).json({ error: 'No contacts match the current selection' });
+        }
     }
 
     try {
@@ -1049,10 +1165,11 @@ router.post("/group-contact-add-bulk", auth, async (req, res) => {
             }
         }
 
-        if (rowsToInsert.length > 0) {
+        // Insert in chunks so large "select all" operations stay within packet limits
+        for (let i = 0; i < rowsToInsert.length; i += 1000) {
             await pool.query(
                 "INSERT INTO `contact_group_mapping`(`unique_id`, `contact_id`, `group_id`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES ?",
-                [rowsToInsert]
+                [rowsToInsert.slice(i, i + 1000)]
             );
         }
 
@@ -1085,11 +1202,9 @@ router.post("/group-contact-delete", auth, async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    console.log(decrypt);
-
-
     const username = req.headers["username"] ? req.headers["username"] : '';
     const all_contact_delete = decrypt?.all_contact_delete === true || decrypt?.all_contact_delete === 'true' || decrypt?.all_contact_delete === 1;
+    const select_all = isTruthyFlag(decrypt?.select_all);
     const project_id = decrypt?.project_id;
     const group_id = decrypt?.group_id;
 
@@ -1107,11 +1222,11 @@ router.post("/group-contact-delete", auth, async (req, res) => {
     const contact_ids = Array.from(new Set(raw_contact_ids.map(c => String(c)).filter(Boolean)));
 
     if (!project_id || !group_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
-    // Only validate unique_ids/contact_ids if all_contact_delete is false
-    if (!all_contact_delete) {
+    // Only validate unique_ids/contact_ids if all_contact_delete / select_all is false
+    if (!all_contact_delete && !select_all) {
         if (unique_ids.length === 0 && contact_ids.length === 0) {
             return res.status(200).json({ error: 'Provide at least one of unique_ids or contact_ids' });
         }
@@ -1135,7 +1250,38 @@ router.post("/group-contact-delete", auth, async (req, res) => {
     const whereConditions = [];
     const whereParams = [];
 
-    if (all_contact_delete) {
+    if (select_all && !all_contact_delete) {
+        // Resolve every group member matching the client's search, minus exclusions.
+        const search = (decrypt?.filters?.search ?? decrypt?.filters?.query ?? '').toString().trim();
+        const excluded = toIdList(decrypt?.excluded_ids);
+        let memberSql = `SELECT cgm.unique_id
+                         FROM contact_group_mapping cgm
+                         INNER JOIN contacts c ON c.contact_id = cgm.contact_id AND c.is_deleted = '0'
+                         WHERE cgm.group_id = ? AND cgm.is_deleted = '0'`;
+        const memberParams = [group_id];
+        if (search) {
+            const like = `%${search}%`;
+            memberSql += ` AND ${CONTACT_SEARCH_SQL}`;
+            memberParams.push(like, like, like, like, like, like);
+        }
+        if (excluded.length > 0) {
+            memberSql += ' AND cgm.contact_id NOT IN (?)';
+            memberParams.push(excluded);
+        }
+        memberSql += ' LIMIT ?';
+        memberParams.push(MAX_BULK_SELECTION);
+        const [memberRows] = await pool.query(memberSql, memberParams);
+        const memberIds = memberRows.map((r) => r.unique_id).filter(Boolean);
+        if (memberIds.length === 0) {
+            return res.status(200).json({ error: 'No contacts match the current selection' });
+        }
+        whereConditions.push('unique_id IN (?)');
+        whereParams.push(memberIds);
+        whereConditions.push('group_id = ?');
+        whereParams.push(group_id);
+        whereConditions.push('is_deleted = ?');
+        whereParams.push('0');
+    } else if (all_contact_delete) {
         // Delete all contacts from the group where is_deleted = '0'
         whereConditions.push('group_id = ?');
         whereParams.push(group_id);
@@ -1171,7 +1317,7 @@ router.post("/group-contact-delete", auth, async (req, res) => {
     const whereClause = whereConditions.join(' AND ');
 
     // Check if any valid (non-deleted) mappings exist
-    const checkSql = `SELECT * FROM \`contact_group_mapping\` WHERE ${whereClause}`;
+    const checkSql = `SELECT id FROM \`contact_group_mapping\` WHERE ${whereClause}`;
     const [check_row] = await pool.query(checkSql, whereParams);
 
     if (check_row.length === 0) {
@@ -1220,7 +1366,7 @@ router.post("/export-contacts", auth, async (req, res) => {
         const type = decrypt?.type;
 
         if (!project_id || !type) {
-            return res.status(200).json({ error: "Provide all mandetory fields" });
+            return res.status(200).json({ error: "Provide all mandatory fields" });
         }
 
         if (type == 'excel') {
@@ -1532,6 +1678,7 @@ router.post("/group-list", auth, async (req, res) => {
     const project_id = decrypt?.project_id;
     const page_no = Number(decrypt?.page_no) || 1;
     let limit = Number(decrypt?.limit) || 20;
+    const search = (decrypt?.search ?? '').toString().trim();
 
     // Ensure limit doesn't exceed 100
     if (limit > 100) {
@@ -1541,7 +1688,7 @@ router.post("/group-list", auth, async (req, res) => {
     const offset = (page_no - 1) * limit;
 
     if (!project_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
@@ -1549,12 +1696,15 @@ router.post("/group-list", auth, async (req, res) => {
         return res.status(200).json({ error: 'User is not assigned on the project' })
     }
 
+    const searchSql = search ? ' AND (name LIKE ? OR remark LIKE ?)' : '';
+    const searchParams = search ? [`%${search}%`, `%${search}%`] : [];
+
     // Get total count for meta
-    const [total_count_result] = await pool.query("SELECT COUNT(*) as total FROM `contact_groups` WHERE project_id = ? AND is_deleted = ?", [project_id, '0']);
+    const [total_count_result] = await pool.query(`SELECT COUNT(*) as total FROM \`contact_groups\` WHERE project_id = ? AND is_deleted = ?${searchSql}`, [project_id, '0', ...searchParams]);
     const total_records = total_count_result[0]?.total || 0;
     const total_pages = Math.ceil(total_records / limit);
 
-    var [row] = await pool.query("SELECT * FROM `contact_groups` WHERE project_id = ? AND is_deleted = ? ORDER BY id DESC LIMIT ? OFFSET ?", [project_id, '0', limit, offset]);
+    var [row] = await pool.query(`SELECT * FROM \`contact_groups\` WHERE project_id = ? AND is_deleted = ?${searchSql} ORDER BY id DESC LIMIT ? OFFSET ?`, [project_id, '0', ...searchParams, limit, offset]);
 
     const groupIds = row.map((element) => element.group_id);
     const auditUsernames = row.flatMap((element) => [element.create_by, element.modify_by]);
@@ -1576,6 +1726,8 @@ router.post("/group-list", auth, async (req, res) => {
         create_by: auditUserRecord(userMap.get(element?.create_by) || {}, { includeUsername: true }),
         modify_by: auditUserRecord(userMap.get(element?.modify_by) || {}, { includeUsername: true }),
         contact_count: contactCountMap.get(element.group_id) || 0,
+        create_date: element?.create_date,
+        modify_date: element?.modify_date,
     }));
 
     return res.status(200).json({
@@ -1618,7 +1770,7 @@ router.post("/group-contact-list", auth, async (req, res) => {
     const offset = (page_no - 1) * limit;
 
     if (!project_id || !group_id) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);

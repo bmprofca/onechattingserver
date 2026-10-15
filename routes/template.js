@@ -42,7 +42,7 @@ router.post("/create-template", auth, async (req, res) => {
 
 
     if (!project_id || !template) {
-        return res.status(200).json({ error: 'Provide all mandetory fields' });
+        return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
 
