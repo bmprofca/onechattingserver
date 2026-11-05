@@ -547,6 +547,7 @@ router.post("/check-chat-window", auth, async (req, res) => {
     }
 
     const project_token = await GetAiSensyProjectToken(project_id);
+    console.log('Project Token:', project_token);
     if (!project_token) {
         return res.status(200).json({ error: 'Failed to get project token' });
     }
@@ -659,6 +660,9 @@ router.post("/send-text-message", auth, async (req, res) => {
     const number = decrypt.number;
     const is_reply = decrypt.is_reply || false;
     const reply_wamid = decrypt.reply_wamid || null;
+    const client_message_id = typeof decrypt.client_message_id === 'string'
+        ? decrypt.client_message_id.slice(0, 100)
+        : '';
 
     if (!project_id || !message || !number || !message) {
         return res.status(200).json({ error: 'Provide all mandatory fields' });
@@ -681,6 +685,7 @@ router.post("/send-text-message", auth, async (req, res) => {
     }
 
     const project_token = await GetAiSensyProjectToken(project_id);
+    console.log('Project Token:', project_token);
     if (!project_token) {
         return res.status(200).json({ error: 'Failed to get project token' });
     }
@@ -793,6 +798,7 @@ router.post("/send-text-message", auth, async (req, res) => {
             is_template: false,
             is_forwarded: false,
             is_reply: is_reply,
+            client_message_id,
             status: new_data?.status,
             type: 'out',
             message_type: 'text',
@@ -2952,4 +2958,3 @@ router.post("/project-media", auth, async (req, res) => {
 });
 
 export default router;
-
