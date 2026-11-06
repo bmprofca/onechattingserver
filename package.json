@@ -4,7 +4,9 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/autoReplyRules.test.js",
+    "test:auto-reply-rules": "node --test test/autoReplyRules.test.js",
+    "migrate:auto-reply-rules": "node scripts/migrate-auto-reply-rules.js",
     "start": "node server.js"
   },
   "keywords": [],

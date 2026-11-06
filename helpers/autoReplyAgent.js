@@ -11,6 +11,11 @@ import axios from "axios";
 import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "./socketEmit.js";
 import { fetchAndExtractDocumentText } from "./docProcessor.js";
+import {
+    incrementAutoReplyRuleTrigger,
+    mapAutoReplyRule,
+    selectAutoReplyRule,
+} from "./autoReplyRules.js";
 
 
 const FALLBACK_NO_CONTEXT = "Sorry, I don't have information about your query. Please connect with our support team for further assistance.";
@@ -825,7 +830,7 @@ async function resolveProviderConfig(connection, projectUniqueId, agentUsePerson
  * and the (optional) context-guide message can all reuse the exact same
  * pipeline.
  */
-async function sendBotMessage(connection, project_id, projectToken, sender, contactName, text) {
+async function sendBotMessage(connection, project_id, projectToken, sender, contactName, text, onSent = null) {
     const unique_id = RANDOM_STRING(30);
 
     await connection.query(
@@ -868,6 +873,8 @@ async function sendBotMessage(connection, project_id, projectToken, sender, cont
         ]);
     }
 
+    if (status === "sent" && onSent) await onSent();
+
     const [newMsgRows] = await connection.query("SELECT * FROM messages WHERE unique_id = ?", [unique_id]);
 
     if (newMsgRows.length > 0) {
@@ -904,6 +911,8 @@ async function sendBotMessage(connection, project_id, projectToken, sender, cont
             contact: { number: sender, name: contactName },
         });
     }
+
+    return status === "sent";
 }
 
 /**
@@ -1172,6 +1181,36 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
         // 5. Bad words -> No Reply. Nothing sent, nothing tracked.
         if (containsBadWords(messageText)) {
             console.log(`[AutoReply] Message from ${sender} on project ${project_id} flagged as bad words. No reply sent.`);
+            return;
+        }
+
+        const [ruleRows] = await connection.query(
+            `SELECT id, unique_id, name, rule_type, keywords, match_type, reply_payload,
+                    timezone, days_of_week, business_hours, start_time, end_time, priority,
+                    is_active, triggered_count, last_triggered_at, create_date, modify_date
+             FROM auto_reply_rules
+             WHERE project_id = ? AND is_active = 1
+             ORDER BY priority ASC, id ASC`,
+            [project_id]
+        );
+        const matchedRule = selectAutoReplyRule(ruleRows.map(mapAutoReplyRule), {
+            message: messageText,
+            isFirstMessage,
+        });
+        if (matchedRule) {
+            const sendCtx = await getSendContext(connection, project_id, sender);
+            if (!sendCtx) return;
+            await sendBotMessage(
+                connection,
+                project_id,
+                sendCtx.projectToken,
+                sender,
+                sendCtx.contactName,
+                matchedRule.response,
+                async () => {
+                    await incrementAutoReplyRuleTrigger(connection, matchedRule.id, project_id);
+                }
+            );
             return;
         }
 
