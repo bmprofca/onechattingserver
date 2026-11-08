@@ -28,3 +28,17 @@ environment before deploying the application. Contact API responses expose
 custom values by stable `field_key` in `custom_attributes` (and at the top level
 for campaign merge variables); saved values and field definitions are always
 queried with the authenticated project ID.
+
+## Shared inbox productivity
+
+Before deploying the project-scoped conversation labels, private notes, and
+canned-reply endpoints, apply:
+
+```powershell
+npm run migrate:inbox-productivity
+```
+
+Conversation labels use the project's CRM tag catalog but are mapped separately
+to each conversation. Internal notes are stored outside the messages/provider
+pipeline and can only be read or created by active members of the conversation's
+project. Run the server checks with `npm test`.

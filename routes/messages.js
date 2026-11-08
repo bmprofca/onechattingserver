@@ -47,6 +47,11 @@ router.post("/chat-list", auth, async (req, res) => {
     var offset = (page_no - 1) * limit;
     var search = (decrypt.search || decrypt.query || '').trim();
     var filter = decrypt.filter || decrypt.filter_type || decrypt.type || 'all';
+    const hasTagFilter = decrypt.tag_id !== undefined && decrypt.tag_id !== null && decrypt.tag_id !== '';
+    if (hasTagFilter && (typeof decrypt.tag_id !== 'string' || !decrypt.tag_id.trim() || decrypt.tag_id.trim().length > 100)) {
+        return res.status(200).json({ error: 'Invalid conversation label filter' });
+    }
+    const filterTagId = hasTagFilter ? decrypt.tag_id.trim() : '';
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
@@ -54,6 +59,11 @@ router.post("/chat-list", auth, async (req, res) => {
     }
 
     let baseArgs = [username, project_id];
+    let tagCondition = "";
+    if (filterTagId) {
+        tagCondition = " AND EXISTS (SELECT 1 FROM conversation_label_mapping clm INNER JOIN crm_tags clt ON clt.project_id = clm.project_id AND clt.tag_id = clm.tag_id AND clt.is_deleted = 0 WHERE clm.project_id = m.project_id AND clm.number = m.number AND clm.tag_id = ? AND clm.is_deleted = 0) ";
+        baseArgs.push(filterTagId);
+    }
     let searchCondition = "";
     if (search) {
         searchCondition = " AND (contacts.name LIKE ? OR m.number LIKE ?) ";
@@ -76,7 +86,7 @@ router.post("/chat-list", auth, async (req, res) => {
         "ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id " +
         "LEFT JOIN contacts ON contacts.number = m.number AND contacts.project_id = m.project_id AND contacts.is_deleted = '0' " +
         "LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' " +
-        "WHERE m.project_id = ? " + searchCondition +
+        "WHERE m.project_id = ? " + tagCondition + searchCondition +
         " GROUP BY m.id, contacts.name " +
         havingCondition;
 
@@ -121,6 +131,15 @@ router.post("/chat-list", auth, async (req, res) => {
              ORDER BY t.name`,
             [project_id, chatNumbers]
         );
+        const [labelRows] = await pool.query(
+            `SELECT m.number, t.tag_id, t.name, t.color
+             FROM conversation_label_mapping m
+             INNER JOIN crm_tags t ON t.project_id = m.project_id
+               AND t.tag_id = m.tag_id AND t.is_deleted = 0
+             WHERE m.project_id = ? AND m.number IN (?) AND m.is_deleted = 0
+             ORDER BY t.name`,
+            [project_id, chatNumbers]
+        );
         const tagsByNumber = new Map();
         for (const tag of tagRows) {
             const tags = tagsByNumber.get(String(tag.number)) || [];
@@ -128,6 +147,14 @@ router.post("/chat-list", auth, async (req, res) => {
                 tags.push({ tag_id: tag.tag_id, name: tag.name, color: tag.color });
             }
             tagsByNumber.set(String(tag.number), tags);
+        }
+        const labelsByNumber = new Map();
+        for (const label of labelRows) {
+            const labels = labelsByNumber.get(String(label.number)) || [];
+            if (!labels.some((item) => item.tag_id === label.tag_id)) {
+                labels.push({ tag_id: label.tag_id, name: label.name, color: label.color });
+            }
+            labelsByNumber.set(String(label.number), labels);
         }
 
         rows.forEach((element) => {
@@ -151,7 +178,8 @@ router.post("/chat-list", auth, async (req, res) => {
                     number,
                     name,
                     is_favorite,
-                    tags: tagsByNumber.get(String(number)) || []
+                    tags: tagsByNumber.get(String(number)) || [],
+                    labels: labelsByNumber.get(String(number)) || []
                 },
                 case_open_count,
                 last_message: {

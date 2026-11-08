@@ -2,6 +2,7 @@ import "./helpers/loadEnv.js";
 import express from "express";
 import cors from "cors";
 import messagesRouter from "./routes/messages.js";
+import inboxRouter from "./routes/inbox.js";
 import catalogRouter from "./routes/catalog.js";
 import webhookRouter, { startWebhookQueueDaemon } from "./routes/webhook.js";
 import accountRouter from "./routes/account.js";
@@ -139,6 +140,7 @@ app.head("/proxy/*objectKey", handleMediaProxy);
 
 app.use("/catalog", catalogRouter);
 app.use("/message", messagesRouter);
+app.use("/inbox", inboxRouter);
 app.use("/webhook", webhookRouter);
 app.use("/account", accountRouter);
 app.use("/contact", contactRouter);

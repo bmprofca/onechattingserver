@@ -252,6 +252,10 @@ router.post("/tags-delete", auth, async (req, res) => {
             "UPDATE contact_tag_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
             [project_id, tag_id]
         );
+        await connection.query(
+            "UPDATE conversation_label_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [project_id, tag_id]
+        );
         await connection.commit();
         return res.status(200).json({ error: false, msg: "Tag deleted" });
     } catch (error) {
