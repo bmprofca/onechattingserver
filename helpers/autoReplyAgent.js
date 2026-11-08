@@ -1074,6 +1074,43 @@ async function getSendContext(connection, project_id, sender) {
     return { projectToken, contactName };
 }
 
+export async function hasMatchingAutoReplyRule(project_id, sender, messageText, incomingUniqueId) {
+    if (!messageText || messageText.trim() === "") return false;
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const [[project]] = await connection.query(
+            "SELECT auto_reply FROM aisensy_projects WHERE project_id = ? LIMIT 1",
+            [project_id]
+        );
+        if (project?.auto_reply !== "1" || containsBadWords(messageText)) return false;
+
+        const [historyRows] = await connection.query(
+            "SELECT id FROM messages WHERE project_id = ? AND number = ? AND unique_id != ? LIMIT 1",
+            [project_id, sender, incomingUniqueId]
+        );
+        const [ruleRows] = await connection.query(
+            `SELECT id, unique_id, name, rule_type, keywords, match_type, reply_payload,
+                    timezone, days_of_week, business_hours, start_time, end_time, priority,
+                    is_active, triggered_count, last_triggered_at, create_date, modify_date
+             FROM auto_reply_rules
+             WHERE project_id = ? AND is_active = 1
+             ORDER BY priority ASC, id ASC`,
+            [project_id]
+        );
+        return Boolean(selectAutoReplyRule(ruleRows.map(mapAutoReplyRule), {
+            message: messageText,
+            isFirstMessage: historyRows.length === 0,
+        }));
+    } catch (error) {
+        console.error("[AutoReply] Failed to check matching rules:", error?.message || error);
+        return false;
+    } finally {
+        if (connection) connection.release();
+    }
+}
+
 /**
  * Handle auto-reply logic for an incoming message.
  *
@@ -1156,29 +1193,8 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
         );
         const isFirstMessage = historyRows.length === 0;
 
-        if ((auto_reply_type || "new") === "new" && historyRows.length > 0) return;
-
-        // 4. Wallet balance check — only applies when NOT using a personal
-        // API key. Matches "Agent Use Personal Key? No -> Wallet Balance >
-        // 100?" / "Yes -> skip wallet check" in the diagram.
-        if (agent_use_personal_key !== "1") {
-            const [ownerRows] = await connection.query(
-                "SELECT username FROM project_mapping WHERE project_id = ? AND type = 'admin' LIMIT 1",
-                [project_id]
-            );
-
-            if (ownerRows.length === 0) return;
-
-            const ownerUsername = ownerRows[0].username;
-            const balance = await GET_BALANCE_BY_USERNAME(ownerUsername);
-
-            if (Number(balance) <= 100) {
-                console.log(`[AutoReply] Owner ${ownerUsername} wallet balance (${balance}) is <= 100 Rs. Aborting auto-reply.`);
-                return;
-            }
-        }
-
-        // 5. Bad words -> No Reply. Nothing sent, nothing tracked.
+        // Explicit rules must be evaluated for existing conversations too;
+        // the new-conversation setting only limits the legacy AI assistant.
         if (containsBadWords(messageText)) {
             console.log(`[AutoReply] Message from ${sender} on project ${project_id} flagged as bad words. No reply sent.`);
             return;
@@ -1212,6 +1228,28 @@ export async function handleAutoReply(project_id, sender, messageText, incomingU
                 }
             );
             return;
+        }
+
+        if ((auto_reply_type || "new") === "new" && historyRows.length > 0) return;
+
+        // 4. Wallet balance check — only applies when NOT using a personal
+        // API key. Matches "Agent Use Personal Key? No -> Wallet Balance >
+        // 100?" / "Yes -> skip wallet check" in the diagram.
+        if (agent_use_personal_key !== "1") {
+            const [ownerRows] = await connection.query(
+                "SELECT username FROM project_mapping WHERE project_id = ? AND type = 'admin' LIMIT 1",
+                [project_id]
+            );
+
+            if (ownerRows.length === 0) return;
+
+            const ownerUsername = ownerRows[0].username;
+            const balance = await GET_BALANCE_BY_USERNAME(ownerUsername);
+
+            if (Number(balance) <= 100) {
+                console.log(`[AutoReply] Owner ${ownerUsername} wallet balance (${balance}) is <= 100 Rs. Aborting auto-reply.`);
+                return;
+            }
         }
 
         // 6. Classify locally first — greetings/small talk never touch the AI.

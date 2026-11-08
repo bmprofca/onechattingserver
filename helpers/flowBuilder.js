@@ -165,6 +165,10 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
 
         if (state && !isResetKeyword) {
             current = state.current_node_id;
+            const currentNode = graph.nodes.find((node) => String(node.id) === String(current));
+            if (currentNode?.type === "message" && currentNode.data?.interactive && !input.interaction_id) {
+                return false;
+            }
         } else {
             // No active state (or user typed menu). Only trigger new flow if explicit trigger
             if (!isExplicitFlowStart(input, graph)) {

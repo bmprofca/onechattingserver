@@ -17,7 +17,7 @@ import {
     loadTemplateFromDb,
     parseMessageComponent,
 } from "../helpers/templateStorage.js";
-import { handleAutoReply } from "../helpers/autoReplyAgent.js";
+import { handleAutoReply, hasMatchingAutoReplyRule } from "../helpers/autoReplyAgent.js";
 import { handleFlowBuilder } from "../helpers/flowBuilder.js";
 import { getInteractiveDisplayText, getInteractiveFromRawJson, getInteractiveFromWebhookMessage } from "../helpers/interactiveMessage.js";
 
@@ -748,23 +748,32 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                     });
 
                     // Flow Builder handles all supported incoming messages first.
-                    // Auto Reply remains the fallback when no active flow handles it.
+                    // Matching Auto Reply rules take priority over an active flow.
                     if (type === 'in' && !is_forwarded) {
                         let rawMessage = {};
                         try { rawMessage = typeof element.raw_json === "string" ? JSON.parse(element.raw_json) : (element.raw_json || {}); } catch { rawMessage = {}; }
                         const interactiveReply = rawMessage?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.list_reply
                             || rawMessage?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply
                             || null;
-                        const flowHandled = await handleFlowBuilder(project_id, number, {
-                            text: message_msg || '',
-                            message_type,
-                            interaction_id: interactiveReply?.id || null,
-                            interaction_title: interactiveReply?.title || message_msg || null,
-                        }, unique_id);
-                        // Flow Builder has priority. If it did not send an answer, let AI handle
-                        // text and interactive selections (the selected title is message_msg).
-                        if (!flowHandled && String(message_msg || '').trim()) {
+                        const autoReplyRuleMatched = await hasMatchingAutoReplyRule(
+                            project_id,
+                            number,
+                            message_msg || '',
+                            unique_id
+                        );
+                        if (autoReplyRuleMatched) {
                             await handleAutoReply(project_id, number, message_msg, unique_id);
+                        } else {
+                            const flowHandled = await handleFlowBuilder(project_id, number, {
+                                text: message_msg || '',
+                                message_type,
+                                interaction_id: interactiveReply?.id || null,
+                                interaction_title: interactiveReply?.title || message_msg || null,
+                            }, unique_id);
+                            // If no rule or flow handled the message, let the legacy AI assistant respond.
+                            if (!flowHandled && String(message_msg || '').trim()) {
+                                await handleAutoReply(project_id, number, message_msg, unique_id);
+                            }
                         }
                     }
                 }
