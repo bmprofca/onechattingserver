@@ -4,9 +4,10 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "node --test test/autoReplyRules.test.js",
+    "test": "node --test test/autoReplyRules.test.js test/crmAttributes.test.js",
     "test:auto-reply-rules": "node --test test/autoReplyRules.test.js",
     "migrate:auto-reply-rules": "node scripts/migrate-auto-reply-rules.js",
+    "migrate:crm-tags-custom-fields": "node scripts/migrate-crm-tags-custom-fields.js",
     "start": "node server.js"
   },
   "keywords": [],

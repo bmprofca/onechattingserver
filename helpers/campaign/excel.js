@@ -331,6 +331,32 @@ async function saveContactToDatabase(data) {
     }
 }
 
+async function attachCustomAttributes(project_id, contacts) {
+    const contactIds = contacts.map((contact) => contact.contact_id).filter(Boolean);
+    if (!contactIds.length) return;
+    const valuesByContact = new Map();
+    for (let offset = 0; offset < contactIds.length; offset += 500) {
+        const [rows] = await pool.query(
+            `SELECT v.contact_id, f.field_key, v.field_value
+             FROM crm_custom_field_values v
+             INNER JOIN crm_custom_fields f ON f.field_id = v.field_id
+               AND f.project_id = v.project_id AND f.is_deleted = 0
+             WHERE v.project_id = ? AND v.contact_id IN (?)`,
+            [project_id, contactIds.slice(offset, offset + 500)]
+        );
+        for (const row of rows) {
+            const values = valuesByContact.get(String(row.contact_id)) || {};
+            values[row.field_key] = row.field_value;
+            valuesByContact.set(String(row.contact_id), values);
+        }
+    }
+    for (const contact of contacts) {
+        const customAttributes = valuesByContact.get(String(contact.contact_id)) || {};
+        contact.custom_attributes = customAttributes;
+        Object.assign(contact, customAttributes);
+    }
+}
+
 export async function processInBackgroundContacts(data) {
     const {
         contact_ids,
@@ -363,6 +389,7 @@ export async function processInBackgroundContacts(data) {
                 `SELECT * FROM contacts WHERE contact_id IN (${placeholders}) AND project_id = ? AND is_deleted = ?`,
                 [...contact_ids, project_id, '0']
             );
+            await attachCustomAttributes(project_id, contactRows);
 
             for (const contact of contactRows) {
                 const phone = String(contact.number || "").trim();
@@ -419,6 +446,7 @@ export async function processInBackgroundContacts(data) {
                     "SELECT * FROM contacts WHERE number = ? AND project_id = ? AND is_deleted = ?",
                     [phone, project_id, '0']
                 );
+                await attachCustomAttributes(project_id, contactRows);
 
                 const contactName = contactRows.length > 0 ? String(contactRows[0].name || "").trim() : "";
                 const contactData = contactRows.length > 0 ? contactRows[0] : null;
@@ -529,6 +557,7 @@ export async function processInBackgroundGroups(data) {
                      AND is_deleted = ?`,
                     [...contactIds, project_id, '0']
                 );
+                await attachCustomAttributes(project_id, contactRows);
 
                 // Process each contact, deduplicating by phone number
                 for (const contact of contactRows) {

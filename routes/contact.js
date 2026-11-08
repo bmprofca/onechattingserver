@@ -5,6 +5,11 @@ import { RANDOM_STRING, TIMESTAMP, USER_DATA, USER_DATA_MAP, auditUserRecord } f
 import { Decrypt } from "../helpers/Decrypt.js";
 import { isTruthyFlag, toIdList, MAX_BULK_SELECTION } from "../helpers/bulkSelection.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
+import {
+    makeCustomFieldKey,
+    normalizeCustomFieldDefinition,
+    validateCustomAttributeValues
+} from "../helpers/crmAttributes.js";
 import * as XLSX from "xlsx";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,11 +19,117 @@ const router = express.Router();
 
 const CONTACT_SEARCH_SQL = "(c.name LIKE ? OR c.number LIKE ? OR c.email LIKE ? OR c.firm_name LIKE ? OR c.website LIKE ? OR c.remark LIKE ?)";
 
+function getCrmPayload(req) {
+    const body = req.body || {};
+    const payload = body.data && body.key ? Decrypt(body.data, body.key) : body;
+    return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : null;
+}
+
+function getCrmProjectId(payload) {
+    const projectId = payload?.project_id;
+    return typeof projectId === "string" && projectId.trim().length > 0 && projectId.length <= 100
+        ? projectId.trim()
+        : "";
+}
+
+function getCrmEntityId(value) {
+    return typeof value === "string" && value.trim().length > 0 && value.length <= 100
+        ? value.trim()
+        : "";
+}
+
+function getFieldOptions(field) {
+    if (!field.options_json) return [];
+    const parsed = JSON.parse(field.options_json);
+    if (!Array.isArray(parsed)) throw new Error(`Custom field "${field.name}" has invalid options`);
+    return parsed;
+}
+
+async function loadContactCrmData(project_id, contactIds) {
+    const result = new Map();
+    if (!contactIds.length) return result;
+
+    const [tagRows] = await pool.query(
+        `SELECT m.contact_id, t.tag_id, t.name, t.color
+         FROM contact_tag_mapping m
+         INNER JOIN crm_tags t ON t.tag_id = m.tag_id
+           AND t.project_id = m.project_id AND t.is_deleted = 0
+         WHERE m.project_id = ? AND m.contact_id IN (?) AND m.is_deleted = 0`,
+        [project_id, contactIds]
+    );
+    const [valueRows] = await pool.query(
+        `SELECT v.contact_id, f.field_id, f.field_key, v.field_value
+         FROM crm_custom_field_values v
+         INNER JOIN crm_custom_fields f ON f.field_id = v.field_id
+           AND f.project_id = v.project_id AND f.is_deleted = 0
+         WHERE v.project_id = ? AND v.contact_id IN (?)`,
+        [project_id, contactIds]
+    );
+
+    for (const contactId of contactIds) {
+        result.set(String(contactId), { tags: [], custom_attributes: {}, custom_attribute_values: {} });
+    }
+    for (const row of tagRows) {
+        result.get(String(row.contact_id))?.tags.push({
+            tag_id: row.tag_id,
+            name: row.name,
+            color: row.color
+        });
+    }
+    for (const row of valueRows) {
+        const contactData = result.get(String(row.contact_id));
+        if (!contactData) continue;
+        contactData.custom_attributes[row.field_key] = row.field_value;
+        contactData.custom_attribute_values[row.field_id] = row.field_value;
+    }
+    return result;
+}
+
+async function saveContactCustomAttributes(db, project_id, contact_id, attributes, username) {
+    if (attributes === undefined) return;
+    const [fields] = await db.query(
+        "SELECT field_id, name, field_type, options_json FROM crm_custom_fields WHERE project_id = ? AND is_deleted = 0",
+        [project_id]
+    );
+    const definitions = fields.map((field) => ({ ...field, options: getFieldOptions(field) }));
+    const validation = validateCustomAttributeValues(definitions, attributes);
+    if (validation.errors.length) {
+        const error = new Error("Custom attributes are invalid");
+        error.details = validation.errors;
+        throw error;
+    }
+
+    for (const item of validation.values) {
+        if (item.value === null) {
+            await db.query(
+                "DELETE FROM crm_custom_field_values WHERE project_id = ? AND contact_id = ? AND field_id = ?",
+                [project_id, contact_id, item.field_id]
+            );
+            continue;
+        }
+        await db.query(
+            `INSERT INTO crm_custom_field_values
+             (project_id, contact_id, field_id, field_value, modify_date, modify_by)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE field_value = VALUES(field_value),
+               modify_date = VALUES(modify_date), modify_by = VALUES(modify_by)`,
+            [project_id, contact_id, item.field_id, item.value, TIMESTAMP(), username]
+        );
+    }
+}
+
+function sendCrmValidationError(res, error) {
+    return res.status(200).json({
+        error: error.message || "Invalid CRM data",
+        details: error.details || undefined
+    });
+}
+
 /**
  * Resolve contact_ids for a "select all matching" bulk action using the same
  * filters as /contact-list (query + favorites), minus excluded ids.
  */
-async function resolveSelectedContactIds({ project_id, username, filters = {}, excluded_ids = [] }) {
+async function resolveSelectedContactIds({ project_id, username, filters = {}, excluded_ids = [], limit = MAX_BULK_SELECTION }) {
     const query = (filters?.query ?? filters?.search ?? '').toString().trim();
     const favoritesOnly = isTruthyFlag(filters?.is_favorite_only);
     const like = `%${query}%`;
@@ -43,10 +154,348 @@ async function resolveSelectedContactIds({ project_id, username, filters = {}, e
         params.push(excluded);
     }
     sql += " LIMIT ?";
-    params.push(MAX_BULK_SELECTION);
+    params.push(limit);
     const [rows] = await pool.query(sql, params);
     return rows.map((r) => String(r.contact_id)).filter(Boolean);
 }
+
+router.post("/tags-list", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    if (!project_id) return res.status(200).json({ error: "Provide project_id" });
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    const [rows] = await pool.query(
+        "SELECT tag_id, name, color FROM crm_tags WHERE project_id = ? AND is_deleted = 0 ORDER BY name",
+        [project_id]
+    );
+    return res.status(200).json({ error: false, data: rows });
+});
+
+router.post("/tags-create", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    const name = typeof payload?.name === "string" ? payload.name.trim() : "";
+    const color = payload?.color === undefined ? "#6366f1" : payload.color;
+    if (!project_id || !name || name.length > 80 || typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) {
+        return res.status(200).json({ error: "Provide a tag name (up to 80 characters) and a valid hex color" });
+    }
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    try {
+        const tag_id = RANDOM_STRING(30);
+        const timestamp = TIMESTAMP();
+        await pool.query(
+            `INSERT INTO crm_tags
+             (tag_id, project_id, name, color, create_date, create_by, modify_date, modify_by, is_deleted)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            [tag_id, project_id, name, color, timestamp, username, timestamp, username]
+        );
+        return res.status(200).json({ error: false, data: { tag_id, name, color }, msg: "Tag created" });
+    } catch (error) {
+        if (error?.code === "ER_DUP_ENTRY") return res.status(200).json({ error: "A tag with this name already exists in this project" });
+        return res.status(200).json({ error: "Failed to create tag" });
+    }
+});
+
+router.post("/tags-update", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    const tag_id = getCrmEntityId(payload?.tag_id);
+    const name = typeof payload?.name === "string" ? payload.name.trim() : "";
+    const color = payload?.color === undefined ? "#6366f1" : payload.color;
+    if (!project_id || !tag_id || !name || name.length > 80 || typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) {
+        return res.status(200).json({ error: "Provide a tag id, name (up to 80 characters), and valid hex color" });
+    }
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    try {
+        const [result] = await pool.query(
+            "UPDATE crm_tags SET name = ?, color = ?, modify_date = ?, modify_by = ? WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [name, color, TIMESTAMP(), username, project_id, tag_id]
+        );
+        if (!result.affectedRows) return res.status(200).json({ error: "Tag not found in this project" });
+        return res.status(200).json({ error: false, msg: "Tag updated" });
+    } catch (error) {
+        if (error?.code === "ER_DUP_ENTRY") return res.status(200).json({ error: "A tag with this name already exists in this project" });
+        return res.status(200).json({ error: "Failed to update tag" });
+    }
+});
+
+router.post("/tags-delete", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    const tag_id = getCrmEntityId(payload?.tag_id);
+    if (!project_id || !tag_id) return res.status(200).json({ error: "Provide project_id and tag_id" });
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [result] = await connection.query(
+            "UPDATE crm_tags SET is_deleted = 1, modify_date = ?, modify_by = ? WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [TIMESTAMP(), username, project_id, tag_id]
+        );
+        if (!result.affectedRows) {
+            await connection.rollback();
+            return res.status(200).json({ error: "Tag not found in this project" });
+        }
+        await connection.query(
+            "UPDATE contact_tag_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [project_id, tag_id]
+        );
+        await connection.commit();
+        return res.status(200).json({ error: false, msg: "Tag deleted" });
+    } catch (error) {
+        console.error("Failed to delete CRM tag:", error);
+        await connection.rollback();
+        return res.status(200).json({ error: "Failed to delete tag" });
+    } finally {
+        connection.release();
+    }
+});
+
+router.post("/tag-contact-bulk", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    const tag_id = getCrmEntityId(payload?.tag_id);
+    const action = payload?.action;
+    if (!project_id || !tag_id || !["add", "remove"].includes(action)) {
+        return res.status(200).json({ error: "Provide project_id, tag_id, and add/remove action" });
+    }
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    const [tagRows] = await pool.query(
+        "SELECT tag_id FROM crm_tags WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+        [project_id, tag_id]
+    );
+    if (!tagRows.length) return res.status(200).json({ error: "Tag not found in this project" });
+
+    let contactIds = toIdList(payload.contact_ids);
+    if (isTruthyFlag(payload.select_all)) {
+        contactIds = await resolveSelectedContactIds({
+            project_id,
+            username,
+            filters: payload.filters || {},
+            excluded_ids: payload.excluded_ids || [],
+            limit: MAX_BULK_SELECTION + 1
+        });
+    }
+    if (!contactIds.length) return res.status(200).json({ error: "Select at least one contact" });
+    if (contactIds.length > MAX_BULK_SELECTION) {
+        return res.status(200).json({ error: `Select no more than ${MAX_BULK_SELECTION} contacts at a time` });
+    }
+
+    const validContacts = new Map();
+    for (let offset = 0; offset < contactIds.length; offset += 500) {
+        const batch = contactIds.slice(offset, offset + 500);
+        const [contactRows] = await pool.query(
+            "SELECT contact_id, name, number FROM contacts WHERE project_id = ? AND contact_id IN (?) AND is_deleted = '0'",
+            [project_id, batch]
+        );
+        for (const row of contactRows) validContacts.set(String(row.contact_id), row);
+    }
+
+    const resultById = new Map();
+    for (const contact_id of contactIds) {
+        if (!validContacts.has(String(contact_id))) {
+            resultById.set(String(contact_id), { contact_id, success: false, error: "Contact not found in this project" });
+        }
+    }
+    const validContactIds = contactIds.filter((contact_id) => validContacts.has(String(contact_id)));
+    for (let offset = 0; offset < validContactIds.length; offset += 500) {
+        const batch = validContactIds.slice(offset, offset + 500);
+        try {
+            if (action === "add") {
+                const timestamp = TIMESTAMP();
+                const rows = batch.map((contact_id) => [project_id, contact_id, tag_id, timestamp, username, 0]);
+                await pool.query(
+                    `INSERT INTO contact_tag_mapping
+                     (project_id, contact_id, tag_id, create_date, create_by, is_deleted)
+                     VALUES ? ON DUPLICATE KEY UPDATE is_deleted = 0`,
+                    [rows]
+                );
+            } else {
+                await pool.query(
+                    "UPDATE contact_tag_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND contact_id IN (?) AND is_deleted = 0",
+                    [project_id, tag_id, batch]
+                );
+            }
+            for (const contact_id of batch) {
+                resultById.set(String(contact_id), { ...validContacts.get(String(contact_id)), success: true });
+            }
+        } catch (error) {
+            console.error("Failed to update contact tag mappings:", error);
+            for (const contact_id of batch) {
+                resultById.set(String(contact_id), {
+                    ...validContacts.get(String(contact_id)),
+                    success: false,
+                    error: "Database update failed"
+                });
+            }
+        }
+    }
+    const results = contactIds.map((contact_id) => resultById.get(String(contact_id)));
+    const failed = results.filter((row) => !row.success).length;
+    return res.status(200).json({
+        error: false,
+        msg: `${action === "add" ? "Tag applied" : "Tag removed"} for ${results.length - failed} contact(s)`,
+        succeeded: results.length - failed,
+        failed,
+        results
+    });
+});
+
+router.post("/custom-fields-list", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    if (!project_id) return res.status(200).json({ error: "Provide project_id" });
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    const [rows] = await pool.query(
+        `SELECT field_id, name, field_key, field_type, options_json
+         FROM crm_custom_fields WHERE project_id = ? AND is_deleted = 0 ORDER BY name`,
+        [project_id]
+    );
+    return res.status(200).json({
+        error: false,
+        data: rows.map((field) => ({
+            field_id: field.field_id,
+            name: field.name,
+            field_key: field.field_key,
+            field_type: field.field_type,
+            options: getFieldOptions(field)
+        }))
+    });
+});
+
+router.post("/custom-fields-create", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    if (!project_id) return res.status(200).json({ error: "Provide project_id" });
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    let definition;
+    try {
+        definition = normalizeCustomFieldDefinition(payload);
+        const field_key = makeCustomFieldKey(definition.name);
+        const field_id = RANDOM_STRING(30);
+        const timestamp = TIMESTAMP();
+        await pool.query(
+            `INSERT INTO crm_custom_fields
+             (field_id, project_id, name, field_key, field_type, options_json, create_date, create_by, modify_date, modify_by, is_deleted)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            [field_id, project_id, definition.name, field_key, definition.field_type,
+                definition.field_type === "select" ? JSON.stringify(definition.options) : null,
+                timestamp, username, timestamp, username]
+        );
+        return res.status(200).json({
+            error: false,
+            data: { field_id, ...definition, field_key },
+            msg: "Custom field created"
+        });
+    } catch (error) {
+        if (error?.code === "ER_DUP_ENTRY") return sendCrmValidationError(res, new Error("A custom field with this key already exists in this project"));
+        if (error?.code) {
+            console.error("Failed to create custom field:", error);
+            return res.status(200).json({ error: "Failed to create custom field" });
+        }
+        return sendCrmValidationError(res, error);
+    }
+});
+
+router.post("/custom-fields-update", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    const field_id = getCrmEntityId(payload?.field_id);
+    if (!project_id || !field_id) return res.status(200).json({ error: "Provide project_id and field_id" });
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    let connection;
+    try {
+        const definition = normalizeCustomFieldDefinition(payload);
+        const [currentRows] = await pool.query(
+            "SELECT field_id, name, field_type, options_json FROM crm_custom_fields WHERE project_id = ? AND field_id = ? AND is_deleted = 0",
+            [project_id, field_id]
+        );
+        if (!currentRows.length) return res.status(200).json({ error: "Custom field not found in this project" });
+        const currentField = currentRows[0];
+        const optionsChanged = JSON.stringify(getFieldOptions(currentField)) !== JSON.stringify(definition.options);
+        if (currentField.field_type !== definition.field_type || optionsChanged) {
+            const [storedValues] = await pool.query(
+                "SELECT field_value FROM crm_custom_field_values WHERE project_id = ? AND field_id = ?",
+                [project_id, field_id]
+            );
+            const candidateField = { field_id, name: definition.name, field_type: definition.field_type, options: definition.options };
+            const invalidExistingValue = storedValues.find((row) =>
+                validateCustomAttributeValues([candidateField], { [field_id]: row.field_value }).errors.length > 0
+            );
+            if (invalidExistingValue) {
+                return res.status(200).json({
+                    error: "The updated field type or options would invalidate saved contact values. Clear or migrate those values first."
+                });
+            }
+        }
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [result] = await connection.query(
+            `UPDATE crm_custom_fields SET name = ?, field_type = ?, options_json = ?, modify_date = ?, modify_by = ?
+             WHERE project_id = ? AND field_id = ? AND is_deleted = 0`,
+            [definition.name, definition.field_type,
+                definition.field_type === "select" ? JSON.stringify(definition.options) : null,
+                TIMESTAMP(), username, project_id, field_id]
+        );
+        if (!result.affectedRows) {
+            await connection.rollback();
+            return res.status(200).json({ error: "Custom field not found in this project" });
+        }
+        await connection.commit();
+        return res.status(200).json({ error: false, msg: "Custom field updated" });
+    } catch (error) {
+        if (connection) await connection.rollback();
+        if (error?.code === "ER_DUP_ENTRY") return sendCrmValidationError(res, new Error("A custom field with this key already exists in this project"));
+        if (error?.code) {
+            console.error("Failed to update custom field:", error);
+            return res.status(200).json({ error: "Failed to update custom field" });
+        }
+        return sendCrmValidationError(res, error);
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+router.post("/custom-fields-delete", auth, async (req, res) => {
+    const payload = getCrmPayload(req);
+    const username = req.headers["username"] || "";
+    const project_id = getCrmProjectId(payload);
+    const field_id = getCrmEntityId(payload?.field_id);
+    if (!project_id || !field_id) return res.status(200).json({ error: "Provide project_id and field_id" });
+    if (!await CheckUserProjectMaping(username, project_id)) {
+        return res.status(200).json({ error: "User is not assigned on the project" });
+    }
+    const [result] = await pool.query(
+        "UPDATE crm_custom_fields SET is_deleted = 1, modify_date = ?, modify_by = ? WHERE project_id = ? AND field_id = ? AND is_deleted = 0",
+        [TIMESTAMP(), username, project_id, field_id]
+    );
+    if (!result.affectedRows) return res.status(200).json({ error: "Custom field not found in this project" });
+    return res.status(200).json({ error: false, msg: "Custom field deleted" });
+});
 
 router.post("/contact-list", auth, async (req, res) => {
     if (req.body && Object.keys(req.body).length > 0) { var data = req.body?.data || ""; var key = req.body?.key || ""; }
@@ -234,6 +683,7 @@ router.post("/contact-list", auth, async (req, res) => {
                 console.error("Failed to load contact groups for contact-list:", e);
             }
         }
+        const crmDataByContact = await loadContactCrmData(project_id, contactIds.map(String));
 
         for (let i = 0; i < rows.length; i++) {
             let element = rows[i];
@@ -246,6 +696,11 @@ router.post("/contact-list", auth, async (req, res) => {
             let remark = element.remark;
             let is_favorite = element?.is_favorite == "yes" ? true : false;
             let contactGroups = contactGroupsMap.get(contact_id) || [];
+            const crmData = crmDataByContact.get(String(contact_id)) || {
+                tags: [],
+                custom_attributes: {},
+                custom_attribute_values: {}
+            };
 
             const [assigned_row] = await pool.query("SELECT * FROM `chat_assigned` WHERE number = ? AND project_id = ? ORDER BY id DESC LIMIT 1", [number, project_id]);
             const agent_id = assigned_row[0]?.username;
@@ -261,7 +716,9 @@ router.post("/contact-list", auth, async (req, res) => {
                 contact_id,
                 is_favorite,
                 groups: contactGroups,
-                group_ids: contactGroups.map(g => g.group_id)
+                group_ids: contactGroups.map(g => g.group_id),
+                ...crmData,
+                ...crmData.custom_attributes
             });
 
             // Track the first and last item's id for cursor-based pagination
@@ -415,26 +872,32 @@ router.post("/create-contact", auth, async (req, res) => {
         return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
-    const [check_row] = await pool.query("SELECT * FROM `contacts` WHERE project_id = ? AND number = ? AND is_deleted = ?", [project_id, number, '0']);
-
-    if (check_row.length !== 0) {
-        return res.status(200).json({ error: 'This contact already exists. You may try to update it.' });
-    }
-
-
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' })
     }
 
+    const [check_row] = await pool.query("SELECT contact_id FROM `contacts` WHERE project_id = ? AND number = ? AND is_deleted = ?", [project_id, number, '0']);
+    if (check_row.length !== 0) {
+        return res.status(200).json({ error: 'This contact already exists. You may try to update it.' });
+    }
 
+
+    const contact_id = RANDOM_STRING(20);
+    const connection = await pool.getConnection();
     try {
-        await pool.query("INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [RANDOM_STRING(20), project_id, name, number, email, firm_name, website, remark, TIMESTAMP(), username, TIMESTAMP(), username, '0']);
-        await pool.query("INSERT INTO `chat_assigned`(`project_id`, `number`, `username`, `create_date`, `create_by`) VALUES (?,?,?,?,?)", [project_id, number, username, TIMESTAMP(), username]);
+        await connection.beginTransaction();
+        await connection.query("INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [contact_id, project_id, name, number, email, firm_name, website, remark, TIMESTAMP(), username, TIMESTAMP(), username, '0']);
+        await connection.query("INSERT INTO `chat_assigned`(`project_id`, `number`, `username`, `create_date`, `create_by`) VALUES (?,?,?,?,?)", [project_id, number, username, TIMESTAMP(), username]);
+        await saveContactCustomAttributes(connection, project_id, contact_id, decrypt?.custom_attributes, username);
+        await connection.commit();
     } catch (error) {
-        return res.status(200).json({
-            error: 'Failed to create contact',
-        });
+        await connection.rollback();
+        if (error?.details) return sendCrmValidationError(res, error);
+        console.error("Failed to create contact with custom attributes:", error);
+        return res.status(200).json({ error: 'Failed to create contact' });
+    } finally {
+        connection.release();
     }
 
 
@@ -532,7 +995,9 @@ router.post("/contact-details", auth, async (req, res) => {
                 status: create_by_data?.status == '1' ? true : false,
             },
         };
-
+        const crmData = await loadContactCrmData(project_id, [String(contact_id)]);
+        Object.assign(contact, crmData.get(String(contact_id)) || {});
+        Object.assign(contact, contact.custom_attributes || {});
         object.contact = contact;
     } else {
         object.has_contact = false;
@@ -579,17 +1044,20 @@ router.post("/update-contact", auth, async (req, res) => {
         return res.status(200).json({ error: 'Invalid contact id' })
     }
 
+    const connection = await pool.getConnection();
     try {
-        await pool.query("UPDATE `contacts` SET `contact_id`=?,`name`=?,`number`=?,`email`=?,`firm_name`=?,`website`=?,`remark`=?,`modify_date`=?,`modify_by`=? WHERE project_id = ? AND contact_id = ?", [contact_id, name, number, email, firm_name, website, remark, TIMESTAMP(), username, project_id, contact_id]);
-
-        return res.status(200).json({
-            error: false,
-            msg: 'Contact updated successfully'
-        });
+        await connection.beginTransaction();
+        await connection.query("UPDATE `contacts` SET `contact_id`=?,`name`=?,`number`=?,`email`=?,`firm_name`=?,`website`=?,`remark`=?,`modify_date`=?,`modify_by`=? WHERE project_id = ? AND contact_id = ?", [contact_id, name, number, email, firm_name, website, remark, TIMESTAMP(), username, project_id, contact_id]);
+        await saveContactCustomAttributes(connection, project_id, contact_id, decrypt?.custom_attributes, username);
+        await connection.commit();
+        return res.status(200).json({ error: false, msg: 'Contact updated successfully' });
     } catch (error) {
-        return res.status(200).json({
-            error: 'Failed to update contact',
-        });
+        await connection.rollback();
+        if (error?.details) return sendCrmValidationError(res, error);
+        console.error("Failed to update contact with custom attributes:", error);
+        return res.status(200).json({ error: 'Failed to update contact' });
+    } finally {
+        connection.release();
     }
 
 });
@@ -1457,6 +1925,7 @@ router.post("/import-contacts", auth, async (req, res) => {
     const username = req.headers["username"] ? req.headers["username"] : '';
     const project_id = decrypt?.project_id;
     const url = decrypt?.url;
+    const import_tag_id = decrypt?.tag_id ? String(decrypt.tag_id) : null;
     const name_index = Number(decrypt?.name_index);
     const number_index = Number(decrypt?.number_index);
     const start_row = Number(decrypt?.start_row) || 1;
@@ -1496,6 +1965,13 @@ router.post("/import-contacts", auth, async (req, res) => {
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' });
+    }
+    if (import_tag_id) {
+        const [tagRows] = await pool.query(
+            "SELECT tag_id FROM crm_tags WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [project_id, import_tag_id]
+        );
+        if (!tagRows.length) return res.status(200).json({ error: "Import tag not found in this project" });
     }
 
     try {
@@ -1598,21 +2074,37 @@ router.post("/import-contacts", auth, async (req, res) => {
 
             try {
                 const contact_id = RANDOM_STRING(20);
-                await pool.query(
+                const connection = await pool.getConnection();
+                try {
+                    await connection.beginTransaction();
+                    await connection.query(
                     "INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [contact_id, project_id, name, number, email || null, firm_name || null, website || null, remark || null, TIMESTAMP(), username, TIMESTAMP(), username, '0']
-                );
-
-                // Assign contact to user (check if already assigned)
-                const [existingAssign] = await pool.query(
-                    "SELECT * FROM `chat_assigned` WHERE project_id = ? AND number = ? AND username = ?",
-                    [project_id, number, username]
-                );
-                if (existingAssign.length === 0) {
-                    await pool.query(
-                        "INSERT INTO `chat_assigned`(`project_id`, `number`, `username`, `create_date`, `create_by`) VALUES (?,?,?,?,?)",
-                        [project_id, number, username, TIMESTAMP(), username]
                     );
+
+                    const [existingAssign] = await connection.query(
+                        "SELECT id FROM `chat_assigned` WHERE project_id = ? AND number = ? AND username = ?",
+                        [project_id, number, username]
+                    );
+                    if (existingAssign.length === 0) {
+                        await connection.query(
+                            "INSERT INTO `chat_assigned`(`project_id`, `number`, `username`, `create_date`, `create_by`) VALUES (?,?,?,?,?)",
+                        [project_id, number, username, TIMESTAMP(), username]
+                        );
+                    }
+                    if (import_tag_id) {
+                        await connection.query(
+                            `INSERT INTO contact_tag_mapping (project_id, contact_id, tag_id, create_date, create_by, is_deleted)
+                             VALUES (?, ?, ?, ?, ?, 0)`,
+                            [project_id, contact_id, import_tag_id, TIMESTAMP(), username]
+                        );
+                    }
+                    await connection.commit();
+                } catch (error) {
+                    await connection.rollback();
+                    throw error;
+                } finally {
+                    connection.release();
                 }
 
                 existingNumbers.add(number); // Add to set to prevent duplicates in same batch

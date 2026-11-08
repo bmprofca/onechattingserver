@@ -109,6 +109,27 @@ router.post("/chat-list", auth, async (req, res) => {
     const res_data = [];
 
     if (rows.length > 0) {
+        const chatNumbers = Array.from(new Set(rows.map((row) => String(row.number || '')).filter(Boolean)));
+        const [tagRows] = await pool.query(
+            `SELECT c.number, t.tag_id, t.name, t.color
+             FROM contacts c
+             INNER JOIN contact_tag_mapping m ON m.project_id = c.project_id
+               AND m.contact_id = c.contact_id AND m.is_deleted = 0
+             INNER JOIN crm_tags t ON t.project_id = m.project_id
+               AND t.tag_id = m.tag_id AND t.is_deleted = 0
+             WHERE c.project_id = ? AND c.number IN (?) AND c.is_deleted = '0'
+             ORDER BY t.name`,
+            [project_id, chatNumbers]
+        );
+        const tagsByNumber = new Map();
+        for (const tag of tagRows) {
+            const tags = tagsByNumber.get(String(tag.number)) || [];
+            if (!tags.some((item) => item.tag_id === tag.tag_id)) {
+                tags.push({ tag_id: tag.tag_id, name: tag.name, color: tag.color });
+            }
+            tagsByNumber.set(String(tag.number), tags);
+        }
+
         rows.forEach((element) => {
             var last_id = element.id;
             var unique_id = element.unique_id;
@@ -129,7 +150,8 @@ router.post("/chat-list", auth, async (req, res) => {
                 contact: {
                     number,
                     name,
-                    is_favorite
+                    is_favorite,
+                    tags: tagsByNumber.get(String(number)) || []
                 },
                 case_open_count,
                 last_message: {
