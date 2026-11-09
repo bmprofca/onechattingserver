@@ -294,13 +294,25 @@ router.post("/chat-history", auth, async (req, res) => {
     const project_id = decrypt.project_id;
     var last_id = Number(decrypt.last_id);
     const number = decrypt.number;
+    const targetMessageId = decrypt.target_message_id === undefined || decrypt.target_message_id === null
+        ? null
+        : Number(decrypt.target_message_id);
+
+    if (targetMessageId !== null && (!Number.isSafeInteger(targetMessageId) || targetMessageId < 1)) {
+        return res.status(200).json({ error: 'Invalid target message' });
+    }
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
         return res.status(200).json({ error: 'User is not assigned on the project' })
     }
 
-    if (last_id == 0) {
+    if (targetMessageId !== null) {
+        var [rows] = await pool.query(
+            "SELECT messages.*,users.name AS sender_name,users.email AS sender_email,users.country_code AS sender_country_code, users.mobile AS sender_mobile,users.status AS sender_status,reader.name AS reader_name,reader.email AS reader_email,reader.country_code AS reader_country_code, reader.mobile AS reader_mobile,reader.status AS reader_status FROM messages LEFT JOIN users ON users.username = messages.message_by LEFT JOIN users reader ON reader.username = messages.read_by LEFT JOIN contacts ON contacts.number = messages.number AND contacts.project_id = messages.project_id AND contacts.is_deleted = '0' WHERE messages.project_id = ? AND messages.number = ? AND messages.id <= ? ORDER BY messages.id DESC LIMIT 100",
+            [project_id, number, targetMessageId]
+        );
+    } else if (last_id == 0) {
         var [rows] = await pool.query(
             "SELECT messages.*,users.name AS sender_name,users.email AS sender_email,users.country_code AS sender_country_code, users.mobile AS sender_mobile,users.status AS sender_status,reader.name AS reader_name,reader.email AS reader_email,reader.country_code AS reader_country_code, reader.mobile AS reader_mobile,reader.status AS reader_status FROM messages LEFT JOIN users ON users.username = messages.message_by LEFT JOIN users reader ON reader.username = messages.read_by LEFT JOIN contacts ON contacts.number = messages.number AND contacts.project_id = messages.project_id AND contacts.is_deleted = '0' WHERE messages.project_id = ? AND messages.number = ? ORDER BY messages.id DESC LIMIT 100",
             [project_id, number]

@@ -9,6 +9,10 @@ import {
     normalizeCannedReply,
     normalizeConversationNumber
 } from "../helpers/inboxProductivity.js";
+import {
+    buildContactTimelineQuery,
+    normalizeTimelinePagination
+} from "../helpers/contactTimeline.js";
 
 const router = express.Router();
 
@@ -72,6 +76,50 @@ function reportInboxError(res, error, action) {
     console.error(`Inbox ${action} failed:`, error);
     return sendFailure(res, 500, `Failed to ${action}`);
 }
+
+router.post("/contact-timeline", auth, async (req, res) => {
+    try {
+        const payload = getPayload(req);
+        const project = await authorizeProject(req, res, payload);
+        if (!project) return;
+
+        const number = normalizeConversationNumber(payload?.number);
+        if (!number) {
+            return sendFailure(res, 400, "Provide a valid contact number");
+        }
+
+        const { page, limit, offset } = normalizeTimelinePagination(
+            payload?.page ?? payload?.page_no,
+            payload?.limit
+        );
+        const timelineQuery = buildContactTimelineQuery(
+            project.projectId,
+            number,
+            page,
+            limit,
+            offset
+        );
+        const [[countRows], [rows]] = await Promise.all([
+            pool.query(timelineQuery.countSql, timelineQuery.countParams),
+            pool.query(timelineQuery.dataSql, timelineQuery.dataParams)
+        ]);
+        const total = Number(countRows[0]?.total) || 0;
+
+        return res.status(200).json({
+            error: false,
+            data: rows,
+            meta: {
+                page,
+                limit,
+                total,
+                total_pages: Math.ceil(total / limit),
+                has_more: offset + rows.length < total
+            }
+        });
+    } catch (error) {
+        return reportInboxError(res, error, "load contact timeline");
+    }
+});
 
 router.post("/conversation-notes-list", auth, async (req, res) => {
     try {
@@ -176,13 +224,14 @@ router.post("/conversation-label-update", auth, async (req, res) => {
                  (project_id, number, tag_id, create_date, create_by, is_deleted)
                  VALUES (?, ?, ?, ?, ?, 0)
                  ON DUPLICATE KEY UPDATE is_deleted = 0, create_date = VALUES(create_date),
-                   create_by = VALUES(create_by)`,
+                   create_by = VALUES(create_by), deleted_date = NULL, deleted_by = NULL`,
                 [conversation.projectId, conversation.number, tagId, TIMESTAMP(), conversation.username]
             );
         } else {
+            const deletedAt = TIMESTAMP();
             await connection.query(
-                "UPDATE conversation_label_mapping SET is_deleted = 1 WHERE project_id = ? AND number = ? AND tag_id = ? AND is_deleted = 0",
-                [conversation.projectId, conversation.number, tagId]
+                "UPDATE conversation_label_mapping SET is_deleted = 1, deleted_date = ?, deleted_by = ? WHERE project_id = ? AND number = ? AND tag_id = ? AND is_deleted = 0",
+                [deletedAt, conversation.username, conversation.projectId, conversation.number, tagId]
             );
         }
         await connection.commit();

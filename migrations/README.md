@@ -43,6 +43,20 @@ to each conversation. Internal notes are stored outside the messages/provider
 pipeline and can only be read or created by active members of the conversation's
 project. Run the server checks with `npm test`.
 
+## Contact timeline
+
+Before deploying the unified contact timeline, apply the tag-removal audit
+columns used to record the actor and time for removed contact/conversation tags:
+
+```powershell
+npm run migrate:contact-timeline
+```
+
+The migration is safe to rerun. Existing soft-deleted tag assignments have no
+recorded removal time, so their original assignment remains visible but no
+historical removal event can be reconstructed. New tag removals are recorded.
+The timeline endpoint only returns events for the authenticated project.
+
 ## Campaign retargeting and opt-out suppression
 
 Before deploying report-derived campaign audiences, apply:

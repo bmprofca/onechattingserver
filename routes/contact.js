@@ -240,21 +240,22 @@ router.post("/tags-delete", auth, async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+        const deletedAt = TIMESTAMP();
         const [result] = await connection.query(
             "UPDATE crm_tags SET is_deleted = 1, modify_date = ?, modify_by = ? WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
-            [TIMESTAMP(), username, project_id, tag_id]
+            [deletedAt, username, project_id, tag_id]
         );
         if (!result.affectedRows) {
             await connection.rollback();
             return res.status(200).json({ error: "Tag not found in this project" });
         }
         await connection.query(
-            "UPDATE contact_tag_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
-            [project_id, tag_id]
+            "UPDATE contact_tag_mapping SET is_deleted = 1, deleted_date = ?, deleted_by = ? WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [deletedAt, username, project_id, tag_id]
         );
         await connection.query(
-            "UPDATE conversation_label_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
-            [project_id, tag_id]
+            "UPDATE conversation_label_mapping SET is_deleted = 1, deleted_date = ?, deleted_by = ? WHERE project_id = ? AND tag_id = ? AND is_deleted = 0",
+            [deletedAt, username, project_id, tag_id]
         );
         await connection.commit();
         return res.status(200).json({ error: false, msg: "Tag deleted" });
@@ -326,13 +327,16 @@ router.post("/tag-contact-bulk", auth, async (req, res) => {
                 await pool.query(
                     `INSERT INTO contact_tag_mapping
                      (project_id, contact_id, tag_id, create_date, create_by, is_deleted)
-                     VALUES ? ON DUPLICATE KEY UPDATE is_deleted = 0`,
+                     VALUES ? ON DUPLICATE KEY UPDATE is_deleted = 0,
+                       create_date = VALUES(create_date), create_by = VALUES(create_by),
+                       deleted_date = NULL, deleted_by = NULL`,
                     [rows]
                 );
             } else {
+                const deletedAt = TIMESTAMP();
                 await pool.query(
-                    "UPDATE contact_tag_mapping SET is_deleted = 1 WHERE project_id = ? AND tag_id = ? AND contact_id IN (?) AND is_deleted = 0",
-                    [project_id, tag_id, batch]
+                    "UPDATE contact_tag_mapping SET is_deleted = 1, deleted_date = ?, deleted_by = ? WHERE project_id = ? AND tag_id = ? AND contact_id IN (?) AND is_deleted = 0",
+                    [deletedAt, username, project_id, tag_id, batch]
                 );
             }
             for (const contact_id of batch) {
@@ -891,7 +895,8 @@ router.post("/create-contact", auth, async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        await connection.query("INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [contact_id, project_id, name, number, email, firm_name, website, remark, TIMESTAMP(), username, TIMESTAMP(), username, '0']);
+        const createdAt = TIMESTAMP();
+        await connection.query("INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", [contact_id, project_id, name, number, email, firm_name, website, remark, createdAt, username, createdAt, username, '0']);
         await connection.query("INSERT INTO `chat_assigned`(`project_id`, `number`, `username`, `create_date`, `create_by`) VALUES (?,?,?,?,?)", [project_id, number, username, TIMESTAMP(), username]);
         await saveContactCustomAttributes(connection, project_id, contact_id, decrypt?.custom_attributes, username);
         await connection.commit();
@@ -2081,9 +2086,10 @@ router.post("/import-contacts", auth, async (req, res) => {
                 const connection = await pool.getConnection();
                 try {
                     await connection.beginTransaction();
+                    const createdAt = TIMESTAMP();
                     await connection.query(
                     "INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    [contact_id, project_id, name, number, email || null, firm_name || null, website || null, remark || null, TIMESTAMP(), username, TIMESTAMP(), username, '0']
+                    [contact_id, project_id, name, number, email || null, firm_name || null, website || null, remark || null, createdAt, username, createdAt, username, '0']
                     );
 
                     const [existingAssign] = await connection.query(
