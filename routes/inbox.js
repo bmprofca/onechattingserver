@@ -1,13 +1,16 @@
 import express from "express";
 import pool from "../db.js";
 import { auth } from "../middleware/auth.js";
+import { WsIo } from "../server.js";
 import { RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 import {
     isActiveProjectMembership,
     insertInternalNote,
     normalizeCannedReply,
-    normalizeConversationNumber
+    normalizeConversationNumber,
+    normalizeBulkConversationNumbers,
+    normalizeSnooze
 } from "../helpers/inboxProductivity.js";
 import {
     buildContactTimelineQuery,
@@ -76,6 +79,299 @@ function reportInboxError(res, error, action) {
     console.error(`Inbox ${action} failed:`, error);
     return sendFailure(res, 500, `Failed to ${action}`);
 }
+
+router.post("/project-members", auth, async (req, res) => {
+    try {
+        const payload = getPayload(req);
+        const project = await authorizeProject(req, res, payload);
+        if (!project) return;
+        const [rows] = await pool.query(
+            `SELECT u.username, u.name, pm.type
+             FROM project_mapping pm
+             INNER JOIN users u ON u.username = pm.username AND u.status = '1'
+             WHERE pm.project_id = ? AND pm.is_deleted = '0'
+             ORDER BY u.name, u.username`,
+            [project.projectId]
+        );
+        return res.status(200).json({ error: false, data: rows });
+    } catch (error) {
+        return reportInboxError(res, error, "load project members");
+    }
+});
+
+router.post("/next-snooze", auth, async (req, res) => {
+    try {
+        const payload = getPayload(req);
+        const project = await authorizeProject(req, res, payload);
+        if (!project) return;
+        const [[row]] = await pool.query(
+            `SELECT DATE_FORMAT(MIN(snoozed_until), '%Y-%m-%dT%H:%i:%s.000Z') AS next_snooze_at
+             FROM inbox_conversation_state
+             WHERE project_id = ? AND snooze_on_reply = 0
+               AND snoozed_until > UTC_TIMESTAMP()`,
+            [project.projectId]
+        );
+        return res.status(200).json({ error: false, data: { next_snooze_at: row?.next_snooze_at || null } });
+    } catch (error) {
+        return reportInboxError(res, error, "load next snooze");
+    }
+});
+
+router.post("/snooze", auth, async (req, res) => {
+    try {
+        const payload = getPayload(req);
+        const conversation = await authorizeConversation(req, res, payload);
+        if (!conversation) return;
+
+        if (payload?.action === "unsnooze") {
+            await pool.query(
+                `UPDATE inbox_conversation_state
+                 SET snoozed_until = NULL, snooze_on_reply = 0, snooze_after_message_id = NULL,
+                     modify_date = UTC_TIMESTAMP(), modify_by = ?
+                 WHERE project_id = ? AND number = ?`,
+                [conversation.username, conversation.projectId, conversation.number]
+            );
+            return res.status(200).json({ error: false, msg: "Conversation unsnoozed" });
+        }
+
+        let snooze;
+        try {
+            snooze = normalizeSnooze(payload);
+        } catch (error) {
+            return sendFailure(res, 400, error.message);
+        }
+
+        const [[latestMessage]] = await pool.query(
+            "SELECT MAX(id) AS last_message_id FROM messages WHERE project_id = ? AND number = ?",
+            [conversation.projectId, conversation.number]
+        );
+        await pool.query(
+            `INSERT INTO inbox_conversation_state
+             (project_id, number, status, snoozed_until, snooze_on_reply, snooze_after_message_id,
+              modify_date, modify_by)
+             VALUES (?, ?, 'open', ?, ?, ?, UTC_TIMESTAMP(), ?)
+             ON DUPLICATE KEY UPDATE snoozed_until = VALUES(snoozed_until),
+               snooze_on_reply = VALUES(snooze_on_reply),
+               snooze_after_message_id = VALUES(snooze_after_message_id),
+               modify_date = VALUES(modify_date), modify_by = VALUES(modify_by)`,
+            [
+                conversation.projectId,
+                conversation.number,
+                snooze.until,
+                snooze.untilNextReply ? 1 : 0,
+                snooze.untilNextReply ? latestMessage?.last_message_id ?? null : null,
+                conversation.username
+            ]
+        );
+        return res.status(200).json({ error: false, msg: "Conversation snoozed" });
+    } catch (error) {
+        return reportInboxError(res, error, "snooze conversation");
+    }
+});
+
+router.post("/bulk-actions", auth, async (req, res) => {
+    try {
+        const payload = getPayload(req);
+        const project = await authorizeProject(req, res, payload);
+        if (!project) return;
+
+        let numbers;
+        try {
+            numbers = normalizeBulkConversationNumbers(payload?.numbers);
+        } catch (error) {
+            return sendFailure(res, 400, error.message);
+        }
+        const action = payload?.action;
+        if (!["assign", "label", "close", "export"].includes(action)) {
+            return sendFailure(res, 400, "Provide a supported bulk action");
+        }
+
+        let target = "";
+        let tagId = "";
+        let labelAction = "";
+        let assignmentMembers = [];
+        if (action === "assign") {
+            target = typeof payload?.target === "string" ? payload.target.trim() : "";
+            if (!target || target.length > 100) return sendFailure(res, 400, "Provide a valid assignee");
+            [assignmentMembers] = await pool.query(
+                `SELECT u.username, u.name, u.mobile, u.email, u.status, pm.type
+                 FROM project_mapping pm
+                 INNER JOIN users u ON u.username = pm.username AND u.status = '1'
+                 WHERE pm.project_id = ? AND pm.is_deleted = '0'
+                 ORDER BY u.name, u.username`,
+                [project.projectId]
+            );
+            if (!assignmentMembers.some((member) => member.username === target)) {
+                return sendFailure(res, 400, "Assignee must be an active member of this project");
+            }
+        } else if (action === "label") {
+            tagId = typeof payload?.tag_id === "string" ? payload.tag_id.trim() : "";
+            labelAction = payload?.label_action;
+            if (!tagId || tagId.length > 100 || !["add", "remove"].includes(labelAction)) {
+                return sendFailure(res, 400, "Provide a label and add/remove action");
+            }
+            const [tags] = await pool.query(
+                "SELECT tag_id FROM crm_tags WHERE project_id = ? AND tag_id = ? AND is_deleted = 0 LIMIT 1",
+                [project.projectId, tagId]
+            );
+            if (!tags.length) return sendFailure(res, 404, "Label not found in this project");
+        }
+
+        let mayAssignOthers = false;
+        if (action === "assign") {
+            const [membershipRows] = await pool.query(
+                "SELECT type, permission_id FROM project_mapping WHERE project_id = ? AND username = ? AND is_deleted = '0' LIMIT 1",
+                [project.projectId, project.username]
+            );
+            const membership = membershipRows[0];
+            mayAssignOthers = membership?.type === "admin";
+            if (!mayAssignOthers) {
+                const [assignmentPermission] = await pool.query(
+                    "SELECT permission FROM permission_options WHERE permission_id = ? AND permission = 'chat assign access' AND status = '1' LIMIT 1",
+                    [membership?.permission_id || ""]
+                );
+                mayAssignOthers = assignmentPermission.length > 0;
+            }
+        }
+        const results = [];
+        const exported = [];
+
+        for (const number of numbers) {
+            try {
+                const [conversations] = await pool.query(
+                    "SELECT number FROM messages WHERE project_id = ? AND number = ? LIMIT 1",
+                    [project.projectId, number]
+                );
+                if (!conversations.length) throw new Error("Conversation not found in this project");
+
+                if (action === "assign") {
+                    const [currentAssignments] = await pool.query(
+                        "SELECT username FROM chat_assigned WHERE project_id = ? AND number = ? ORDER BY id DESC LIMIT 1",
+                        [project.projectId, number]
+                    );
+                    if (!mayAssignOthers && currentAssignments[0]?.username !== project.username) {
+                        throw new Error("You do not have permission to assign this conversation");
+                    }
+                    const connection = await pool.getConnection();
+                    try {
+                        await connection.beginTransaction();
+                        await connection.query(
+                            "DELETE FROM chat_assigned WHERE project_id = ? AND number = ?",
+                            [project.projectId, number]
+                        );
+                        await connection.query(
+                            `INSERT INTO chat_assigned (project_id, number, username, create_date, create_by)
+                             VALUES (?, ?, ?, CURRENT_TIMESTAMP(), ?)`,
+                            [project.projectId, number, target, project.username]
+                        );
+                        await connection.commit();
+                    } catch (error) {
+                        try {
+                            await connection.rollback();
+                        } catch (rollbackError) {
+                            console.error("Inbox bulk assignment rollback failed:", rollbackError);
+                        }
+                        throw error;
+                    } finally {
+                        connection.release();
+                    }
+                    try {
+                        const assignedUser = assignmentMembers.find((member) => member.username === target);
+                        const users = assignmentMembers.map((member) => ({
+                            username: member.username,
+                            name: member.name,
+                            mobile: member.mobile,
+                            email: member.email,
+                            type: member.type === "admin" ? "admin" : "agent"
+                        }));
+                        for (const recipient of assignmentMembers) {
+                            WsIo.to(recipient.username).emit("chat_assigned", {
+                                project_id: project.projectId,
+                                number,
+                                assigning: {
+                                    assigned: true,
+                                    assigned_to_me: recipient.username === target,
+                                    assigned_user: {
+                                        username: assignedUser.username,
+                                        name: assignedUser.name,
+                                        mobile: assignedUser.mobile,
+                                        email: assignedUser.email,
+                                        status: assignedUser.status === "1"
+                                    },
+                                    users: users.map((member) => ({
+                                        ...member,
+                                        is_me: member.username === recipient.username
+                                    }))
+                                }
+                            });
+                        }
+                    } catch (error) {
+                        console.error("Inbox bulk assignment socket notification failed:", {
+                            project_id: project.projectId,
+                            number,
+                            error
+                        });
+                    }
+                } else if (action === "label") {
+                    if (labelAction === "add") {
+                        await pool.query(
+                            `INSERT INTO conversation_label_mapping
+                             (project_id, number, tag_id, create_date, create_by, is_deleted)
+                             VALUES (?, ?, ?, UTC_TIMESTAMP(), ?, 0)
+                             ON DUPLICATE KEY UPDATE is_deleted = 0, create_date = VALUES(create_date),
+                               create_by = VALUES(create_by), deleted_date = NULL, deleted_by = NULL`,
+                            [project.projectId, number, tagId, project.username]
+                        );
+                    } else {
+                        await pool.query(
+                            `UPDATE conversation_label_mapping
+                             SET is_deleted = 1, deleted_date = UTC_TIMESTAMP(), deleted_by = ?
+                             WHERE project_id = ? AND number = ? AND tag_id = ? AND is_deleted = 0`,
+                            [project.username, project.projectId, number, tagId]
+                        );
+                    }
+                } else if (action === "close") {
+                    await pool.query(
+                        `INSERT INTO inbox_conversation_state
+                         (project_id, number, status, closed_at, closed_by, modify_date, modify_by)
+                         VALUES (?, ?, 'closed', UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)
+                         ON DUPLICATE KEY UPDATE status = 'closed', closed_at = VALUES(closed_at),
+                           closed_by = VALUES(closed_by), modify_date = VALUES(modify_date),
+                           modify_by = VALUES(modify_by)`,
+                        [project.projectId, number, project.username, project.username]
+                    );
+                } else {
+                    const [[row]] = await pool.query(
+                        `SELECT m.number, COALESCE(c.name, m.number) AS name, m.message, m.message_type,
+                                m.type, m.create_date,
+                                (SELECT ca.username FROM chat_assigned ca
+                                 WHERE ca.project_id = m.project_id AND ca.number = m.number
+                                 ORDER BY ca.id DESC LIMIT 1) AS assigned_to
+                         FROM messages m
+                         LEFT JOIN contacts c ON c.project_id = m.project_id AND c.number = m.number
+                           AND c.is_deleted = '0'
+                         WHERE m.project_id = ? AND m.number = ?
+                         ORDER BY m.id DESC LIMIT 1`,
+                        [project.projectId, number]
+                    );
+                    if (row) exported.push(row);
+                }
+                results.push({ number, success: true });
+            } catch (error) {
+                console.error("Inbox bulk action item failed:", { action, project_id: project.projectId, number, error });
+                results.push({ number, success: false, error: "Action failed; retry or contact a project admin" });
+            }
+        }
+
+        return res.status(200).json({
+            error: false,
+            results,
+            ...(action === "export" ? { data: exported } : {})
+        });
+    } catch (error) {
+        return reportInboxError(res, error, "run bulk action");
+    }
+});
 
 router.post("/contact-timeline", auth, async (req, res) => {
     try {

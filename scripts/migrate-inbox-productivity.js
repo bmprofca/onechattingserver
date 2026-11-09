@@ -4,13 +4,18 @@ import { fileURLToPath } from "node:url";
 import pool from "../db.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const migrationPath = path.join(scriptDir, "../migrations/20261108_create_inbox_productivity.sql");
+const migrationPaths = [
+    path.join(scriptDir, "../migrations/20261108_create_inbox_productivity.sql"),
+    path.join(scriptDir, "../migrations/20261110_create_inbox_conversation_state.sql")
+];
 
 try {
-    const migration = await fs.readFile(migrationPath, "utf8");
-    const statements = migration.split(";").map((statement) => statement.trim()).filter(Boolean);
-    for (const statement of statements) {
-        await pool.query(statement);
+    for (const migrationPath of migrationPaths) {
+        const migration = await fs.readFile(migrationPath, "utf8");
+        const statements = migration.split(";").map((statement) => statement.trim()).filter(Boolean);
+        for (const statement of statements) {
+            await pool.query(statement);
+        }
     }
     console.log("Inbox productivity migration completed.");
 } catch (error) {

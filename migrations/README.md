@@ -41,7 +41,16 @@ npm run migrate:inbox-productivity
 Conversation labels use the project's CRM tag catalog but are mapped separately
 to each conversation. Internal notes are stored outside the messages/provider
 pipeline and can only be read or created by active members of the conversation's
-project. Run the server checks with `npm test`.
+project. The migration also creates the project-scoped conversation state used
+by snooze and close workflows. Chat-list views hide active snoozes and expose
+My Open, Unassigned, SLA Breach, and VIP views. Until the separate M09 SLA
+policies are available, SLA Breach means an open conversation whose latest
+message is an unanswered customer message older than one hour. Bulk operations
+are bounded to 200 selected conversations and report per-conversation failures.
+Conversation label add/remove additionally requires the tag-audit columns from
+the `migrate:contact-timeline` migration; apply that migration before enabling
+conversation label changes.
+Run the server checks with `npm test`.
 
 ## Contact timeline
 

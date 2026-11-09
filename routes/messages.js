@@ -40,13 +40,25 @@ router.post("/chat-list", auth, async (req, res) => {
     }
 
     const username = req.headers["username"] ? req.headers["username"] : '';
-    const project_id = decrypt.project_id;
+    const project_id = typeof decrypt.project_id === "string" ? decrypt.project_id.trim() : "";
+    if (!project_id || project_id.length > 100) {
+        return res.status(200).json({ error: "Provide a valid project_id" });
+    }
 
-    var page_no = Math.max(1, parseInt(decrypt.page_no || decrypt.page, 10) || 1);
-    var limit = Math.max(1, parseInt(decrypt.limit, 10) || 30);
+    var page_no = Math.min(1000000, Math.max(1, parseInt(decrypt.page_no || decrypt.page, 10) || 1));
+    var limit = Math.min(100, Math.max(1, parseInt(decrypt.limit, 10) || 30));
     var offset = (page_no - 1) * limit;
-    var search = (decrypt.search || decrypt.query || '').trim();
-    var filter = decrypt.filter || decrypt.filter_type || decrypt.type || 'all';
+    const rawSearch = decrypt.search ?? decrypt.query ?? "";
+    if (typeof rawSearch !== "string" || rawSearch.length > 100) {
+        return res.status(200).json({ error: "Search must be a string of at most 100 characters" });
+    }
+    var search = rawSearch.trim();
+    const requestedFilter = decrypt.view ?? decrypt.filter ?? decrypt.filter_type ?? decrypt.type ?? "all";
+    const supportedFilters = ["all", "unread", "favourites", "assigned", "my_open", "unassigned", "sla_breach", "vip"];
+    if (typeof requestedFilter !== "string" || !supportedFilters.includes(requestedFilter)) {
+        return res.status(200).json({ error: "Invalid inbox view" });
+    }
+    var filter = requestedFilter;
     const hasTagFilter = decrypt.tag_id !== undefined && decrypt.tag_id !== null && decrypt.tag_id !== '';
     if (hasTagFilter && (typeof decrypt.tag_id !== 'string' || !decrypt.tag_id.trim() || decrypt.tag_id.trim().length > 100)) {
         return res.status(200).json({ error: 'Invalid conversation label filter' });
@@ -66,11 +78,19 @@ router.post("/chat-list", auth, async (req, res) => {
     }
     let searchCondition = "";
     if (search) {
-        searchCondition = " AND (contacts.name LIKE ? OR m.number LIKE ?) ";
-        const searchPattern = `%${search}%`;
-        baseArgs.push(searchPattern, searchPattern);
+        searchCondition = ` AND (
+            LOCATE(?, contacts.name) > 0 OR LOCATE(?, m.number) > 0
+            OR EXISTS (
+                SELECT 1 FROM messages search_m
+                WHERE search_m.project_id = m.project_id
+                  AND search_m.number = m.number
+                  AND LOCATE(?, search_m.message) > 0
+            )
+        ) `;
+        baseArgs.push(search, search, search);
     }
 
+    let filterCondition = "";
     let havingCondition = "";
     if (filter === 'unread') {
         havingCondition = " HAVING unread_count > 0 ";
@@ -78,6 +98,14 @@ router.post("/chat-list", auth, async (req, res) => {
         havingCondition = " HAVING is_favorite = 'yes' ";
     } else if (filter === 'assigned') {
         havingCondition = " HAVING is_assigned = 'yes' ";
+    } else if (filter === 'vip') {
+        havingCondition = " HAVING is_favorite = 'yes' ";
+    } else if (filter === 'my_open') {
+        havingCondition = " HAVING inbox_status = 'open' AND is_assigned = 'yes' ";
+    } else if (filter === 'unassigned') {
+        havingCondition = " HAVING inbox_status = 'open' AND has_assignment = 'no' ";
+    } else if (filter === 'sla_breach') {
+        filterCondition = " AND COALESCE(ics.status, 'open') = 'open' AND m.type = 'in' AND m.create_date < DATE_SUB(NOW(), INTERVAL 1 HOUR) ";
     }
 
     const baseQuery =
@@ -86,14 +114,27 @@ router.post("/chat-list", auth, async (req, res) => {
         "ON m.project_id = last_msg.project_id AND m.number = last_msg.number AND m.id = last_msg.last_id " +
         "LEFT JOIN contacts ON contacts.number = m.number AND contacts.project_id = m.project_id AND contacts.is_deleted = '0' " +
         "LEFT JOIN messages m2 ON m2.number = m.number AND m2.project_id = m.project_id AND m2.type = 'in' AND m2.is_read = '0' " +
-        "WHERE m.project_id = ? " + tagCondition + searchCondition +
-        " GROUP BY m.id, contacts.name " +
+        "LEFT JOIN inbox_conversation_state ics ON ics.project_id = m.project_id AND ics.number = m.number " +
+        `WHERE m.project_id = ?
+          AND (
+            ics.number IS NULL
+            OR (ics.snooze_on_reply = 0 AND (ics.snoozed_until IS NULL OR ics.snoozed_until <= UTC_TIMESTAMP()))
+            OR (ics.snooze_on_reply = 1 AND EXISTS (
+                SELECT 1 FROM messages reply_m
+                WHERE reply_m.project_id = m.project_id AND reply_m.number = m.number
+                  AND reply_m.type = 'in' AND reply_m.id > ics.snooze_after_message_id
+            ))
+          ) ` + tagCondition + searchCondition +
+        filterCondition +
+        " GROUP BY m.id, contacts.name, ics.status " +
         havingCondition;
 
     const countSql = "SELECT COUNT(*) AS total FROM (" +
         "SELECT m.id, " +
         "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
         "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number AND ca.username = ?) THEN 'yes' ELSE 'no' END AS is_assigned, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number) THEN 'yes' ELSE 'no' END AS has_assignment, " +
+        "COALESCE(ics.status, 'open') AS inbox_status, " +
         "COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count " +
         baseQuery +
         ") AS total_subquery";
@@ -102,6 +143,8 @@ router.post("/chat-list", auth, async (req, res) => {
         "SELECT m.*, contacts.name, " +
         "CASE WHEN EXISTS (SELECT 1 FROM favorite_contacts fc WHERE fc.project_id = m.project_id AND fc.number = m.number AND fc.username = ? AND fc.status = '1') THEN 'yes' ELSE 'no' END AS is_favorite, " +
         "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number AND ca.username = ?) THEN 'yes' ELSE 'no' END AS is_assigned, " +
+        "CASE WHEN EXISTS (SELECT 1 FROM chat_assigned ca WHERE ca.project_id = m.project_id AND ca.number = m.number) THEN 'yes' ELSE 'no' END AS has_assignment, " +
+        "COALESCE(ics.status, 'open') AS inbox_status, " +
         "(SELECT COUNT(*) FROM cases c WHERE c.project_id = m.project_id AND c.number = m.number AND c.status = '0') AS case_open_count, " +
         "COUNT(CASE WHEN m2.type = 'in' AND m2.is_read = '0' THEN 1 END) AS unread_count " +
         baseQuery +
@@ -178,9 +221,11 @@ router.post("/chat-list", auth, async (req, res) => {
                     number,
                     name,
                     is_favorite,
+                    is_vip: is_favorite,
                     tags: tagsByNumber.get(String(number)) || [],
                     labels: labelsByNumber.get(String(number)) || []
                 },
+                inbox_status: element.inbox_status || 'open',
                 case_open_count,
                 last_message: {
                     id: last_id,

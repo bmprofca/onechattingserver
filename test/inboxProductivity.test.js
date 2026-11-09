@@ -4,8 +4,10 @@ import {
     expandContactName,
     insertInternalNote,
     isActiveProjectMembership,
+    normalizeBulkConversationNumbers,
     normalizeCannedReply,
-    normalizeConversationNumber
+    normalizeConversationNumber,
+    normalizeSnooze
 } from "../helpers/inboxProductivity.js";
 
 test("internal-note access requires an active exact project membership", () => {
@@ -36,6 +38,35 @@ test("conversation numbers accept bounded phone numbers only", () => {
     assert.equal(normalizeConversationNumber("123"), "");
     assert.equal(normalizeConversationNumber("abc1234567"), "");
     assert.equal(normalizeConversationNumber(14155550123), "");
+});
+
+test("bulk conversation numbers are normalized, deduplicated and bounded", () => {
+    assert.deepEqual(
+        normalizeBulkConversationNumbers([" +14155550123 ", "+14155550123", "14155550124"]),
+        ["+14155550123", "14155550124"]
+    );
+    assert.throws(() => normalizeBulkConversationNumbers(["not-a-number"]));
+    assert.throws(() => normalizeBulkConversationNumbers([], 2));
+    assert.throws(() => normalizeBulkConversationNumbers(["+14155550123", "+14155550124"], 1));
+});
+
+test("snooze validation supports the next reply and bounded future timestamps", () => {
+    const now = Date.parse("2026-11-10T00:00:00.000Z");
+    assert.deepEqual(normalizeSnooze({ until_next_reply: true }, now), {
+        untilNextReply: true,
+        until: null
+    });
+    assert.deepEqual(normalizeSnooze({ until: "2026-11-10T01:00:00.000Z" }, now), {
+        untilNextReply: false,
+        until: "2026-11-10 01:00:00"
+    });
+    assert.deepEqual(normalizeSnooze({ until: "2026-11-10T00:00:00.100Z" }, now), {
+        untilNextReply: false,
+        until: "2026-11-10 00:00:01"
+    });
+    assert.throws(() => normalizeSnooze({ until: "2026-11-09T23:59:59.000Z" }, now));
+    assert.throws(() => normalizeSnooze({ until: "2028-01-01T00:00:00.000Z" }, now));
+    assert.throws(() => normalizeSnooze({}, now));
 });
 
 test("canned replies normalize shortcuts and reject unsafe or oversized values", () => {

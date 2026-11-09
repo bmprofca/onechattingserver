@@ -13,6 +13,37 @@ export function normalizeConversationNumber(value) {
     return /^\+?\d{5,24}$/.test(number) ? number : "";
 }
 
+export function normalizeBulkConversationNumbers(rawNumbers, maximum = 200) {
+    if (!Array.isArray(rawNumbers) || rawNumbers.length === 0 || rawNumbers.length > maximum) {
+        throw new Error(`Select between 1 and ${maximum} conversations`);
+    }
+
+    const numbers = Array.from(new Set(rawNumbers.map(normalizeConversationNumber)));
+    if (numbers.some((number) => !number)) {
+        throw new Error("One or more conversation numbers are invalid");
+    }
+    return numbers;
+}
+
+export function normalizeSnooze(payload, now = Date.now()) {
+    if (payload?.until_next_reply === true) {
+        return { untilNextReply: true, until: null };
+    }
+
+    if (typeof payload?.until !== "string" || !payload.until.trim()) {
+        throw new Error("Provide a snooze time or until_next_reply");
+    }
+    const untilMs = Date.parse(payload.until);
+    if (!Number.isFinite(untilMs) || untilMs <= now || untilMs > now + 366 * 24 * 60 * 60 * 1000) {
+        throw new Error("Snooze time must be in the future and within one year");
+    }
+    const roundedUntil = new Date(Math.ceil(untilMs / 1000) * 1000);
+    return {
+        untilNextReply: false,
+        until: roundedUntil.toISOString().slice(0, 19).replace("T", " ")
+    };
+}
+
 export function normalizeCannedReply(payload) {
     const shortcut = typeof payload?.shortcut === "string"
         ? payload.shortcut.trim().replace(/^\/+/, "").toLowerCase()
