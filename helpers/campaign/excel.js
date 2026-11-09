@@ -554,7 +554,12 @@ export async function processInBackgroundGroups(data) {
                     `SELECT * FROM contacts 
                      WHERE contact_id IN (${contactPlaceholders}) 
                      AND project_id = ? 
-                     AND is_deleted = ?`,
+                     AND is_deleted = ?
+                     AND NOT EXISTS (
+                         SELECT 1 FROM campaign_suppressions suppression
+                         WHERE suppression.project_id = contacts.project_id
+                           AND suppression.phone = contacts.number
+                     )`,
                     [...contactIds, project_id, '0']
                 );
                 await attachCustomAttributes(project_id, contactRows);

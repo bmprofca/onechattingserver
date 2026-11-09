@@ -11,6 +11,7 @@ import { processInBackgroundExcel, processInBackgroundContacts, processInBackgro
 import { validateScheduleDate, validateTemplate, insertCampaign } from "../helpers/campaign/createHelper.js";
 import { InitiateCampaignMessages } from "../helpers/campaign/sendMessage.js";
 import { RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
+import { buildRetargetAudienceQuery, getRetargetAudience, normalizeSuppressionPhone } from "../helpers/campaign/retargeting.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -203,7 +204,9 @@ router.post("/create/group", auth, async (req, res) => {
         }
 
         const username = (req.headers["username"] || "").toString().trim();
-        const group_ids = Array.isArray(decrypt?.group_ids) ? decrypt.group_ids : [];
+        const group_ids = Array.isArray(decrypt?.group_ids)
+            ? [...new Set(decrypt.group_ids.map((groupId) => String(groupId || "").trim()).filter(Boolean))]
+            : [];
         const component = decrypt?.component;
         const name = (decrypt?.name ?? "").toString().trim();
         const template_id = (decrypt?.template_id ?? "").toString().trim();
@@ -220,6 +223,14 @@ router.post("/create/group", auth, async (req, res) => {
         const check_project_mapping = await CheckUserProjectMaping(username, project_id);
         if (!check_project_mapping) {
             return res.status(200).json({ error: "User is not assigned on the project" });
+        }
+
+        const [projectGroups] = await pool.query(
+            "SELECT group_id FROM contact_groups WHERE project_id = ? AND is_deleted = '0' AND group_id IN (?)",
+            [project_id, group_ids]
+        );
+        if (projectGroups.length !== group_ids.length) {
+            return res.status(200).json({ error: "One or more groups are invalid for this project" });
         }
 
         let scheduleDateValue, isScheduled;
@@ -256,6 +267,147 @@ router.post("/create/group", auth, async (req, res) => {
         return res.status(200).json({ error: false, msg: "Campaign created successfully" });
     } catch (error) {
         return res.status(200).json({ error: "Failed to create campaign", e: error?.message || String(error) });
+    }
+});
+
+router.post("/retargeting/audience", auth, async (req, res) => {
+    let connection;
+    let transactionStarted = false;
+    try {
+        const decrypt = Decrypt(req.body?.data || "", req.body?.key || "");
+        if (!decrypt) {
+            return res.status(200).json({ error: "Failed to decrypt data" });
+        }
+
+        const username = String(req.headers["username"] || "").trim();
+        const campaign_id = String(decrypt?.campaign_id || "").trim();
+        const project_id = String(decrypt?.project_id || "").trim();
+        const audience = getRetargetAudience(decrypt?.audience);
+        if (!campaign_id || !project_id || !audience) {
+            return res.status(200).json({ error: "Provide a valid project_id, campaign_id and audience" });
+        }
+
+        const check_project_mapping = await CheckUserProjectMaping(username, project_id);
+        if (!check_project_mapping) {
+            return res.status(200).json({ error: "User is not assigned on the project" });
+        }
+        const [campaignRows] = await pool.query(
+            "SELECT campaign_id, project_id, name, entry_complete FROM campaigns WHERE campaign_id = ? AND project_id = ? AND is_deleted = '0' LIMIT 1",
+            [campaign_id, project_id]
+        );
+        if (campaignRows.length === 0) {
+            return res.status(200).json({ error: "Campaign not found" });
+        }
+
+        const campaign = campaignRows[0];
+        if (String(campaign.entry_complete) !== "1") {
+            return res.status(200).json({ error: "Campaign recipients are not ready for retargeting" });
+        }
+
+        const requestedName = String(decrypt?.name || `${campaign.name || "Campaign"} - ${audience.label}`).trim();
+        if (!requestedName || requestedName.length > 100) {
+            return res.status(200).json({ error: "Audience name must be between 1 and 100 characters" });
+        }
+
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        transactionStarted = true;
+
+        const audienceQuery = buildRetargetAudienceQuery(decrypt.audience);
+        const [recipientRows] = await connection.query(audienceQuery.sql, [project_id, campaign_id]);
+
+        const phoneNumbers = [...new Set(
+            recipientRows.map((row) => normalizeSuppressionPhone(row.number)).filter(Boolean)
+        )];
+        if (phoneNumbers.length === 0) {
+            await connection.rollback();
+            transactionStarted = false;
+            return res.status(200).json({ error: `No eligible contacts found for "${audience.label}"` });
+        }
+
+        const group_id = RANDOM_STRING(30);
+        const now = TIMESTAMP();
+        const remark = `Retargeted from ${campaign_id}: ${audience.label}`.slice(0, 100);
+        await connection.query(
+            `INSERT INTO contact_groups
+                (group_id, name, remark, create_date, create_by, modify_date, modify_by, is_deleted, project_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, '0', ?)`,
+            [group_id, requestedName, remark, now, username, now, username, project_id]
+        );
+
+        const contactByPhone = new Map();
+        for (let offset = 0; offset < phoneNumbers.length; offset += 500) {
+            const batch = phoneNumbers.slice(offset, offset + 500);
+            const [contacts] = await connection.query(
+                "SELECT contact_id, number FROM contacts WHERE project_id = ? AND is_deleted = '0' AND number IN (?) ORDER BY id",
+                [project_id, batch]
+            );
+            for (const contact of contacts) {
+                const phone = normalizeSuppressionPhone(contact.number);
+                if (!contactByPhone.has(phone)) contactByPhone.set(phone, contact.contact_id);
+            }
+        }
+
+        const missingPhones = phoneNumbers.filter((phone) => !contactByPhone.has(phone));
+        for (let offset = 0; offset < missingPhones.length; offset += 500) {
+            const batch = missingPhones.slice(offset, offset + 500);
+            const contactsToInsert = batch.map((phone) => {
+                const contact_id = RANDOM_STRING(30);
+                contactByPhone.set(phone, contact_id);
+                return [contact_id, project_id, phone, phone, now, username, now, username, "0"];
+            });
+            await connection.query(
+                `INSERT INTO contacts
+                    (contact_id, project_id, name, number, create_date, create_by, modify_date, modify_by, is_deleted)
+                 VALUES ?`,
+                [contactsToInsert]
+            );
+        }
+
+        const mappings = phoneNumbers.map((phone) => [
+            RANDOM_STRING(30),
+            contactByPhone.get(phone),
+            group_id,
+            now,
+            username,
+            now,
+            username,
+            "0"
+        ]);
+        for (let offset = 0; offset < mappings.length; offset += 500) {
+            await connection.query(
+                `INSERT INTO contact_group_mapping
+                    (unique_id, contact_id, group_id, create_date, create_by, modify_date, modify_by, is_deleted)
+                 VALUES ?`,
+                [mappings.slice(offset, offset + 500)]
+            );
+        }
+
+        await connection.commit();
+        transactionStarted = false;
+        return res.status(200).json({
+            error: false,
+            msg: "Retargeting audience saved successfully",
+            data: {
+                group_id,
+                name: requestedName,
+                audience: String(decrypt.audience),
+                contact_count: phoneNumbers.length
+            }
+        });
+    } catch (error) {
+        if (connection && transactionStarted) {
+            try {
+                await connection.rollback();
+            } catch (rollbackError) {
+                console.error("[campaign] Failed to roll back retargeting audience:", rollbackError?.message || rollbackError);
+            }
+            transactionStarted = false;
+        }
+        console.error("[campaign] Failed to create retargeting audience:", error?.message || error);
+        return res.status(200).json({ error: "Failed to create retargeting audience" });
+    } finally {
+        connection?.release();
     }
 });
 

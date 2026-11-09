@@ -7,6 +7,7 @@ import {
     expandTemplateMediaUrls,
     loadTemplateFromDb,
 } from "../templateStorage.js";
+import { normalizeSuppressionPhone } from "./retargeting.js";
 
 /** In-memory lock: only one InitiateCampaignMessages per campaign at a time (prevents duplicate sends) */
 const processingCampaigns = new Set();
@@ -41,6 +42,21 @@ const InitiateCampaignMessages = async ({ campaign_id }) => {
             const language_code = element?.language_code;
             let component = element?.component;
             const number = element?.number;
+
+            const phone = normalizeSuppressionPhone(number);
+            if (phone) {
+                const [suppressionRows] = await pool.query(
+                    "SELECT 1 FROM campaign_suppressions WHERE project_id = ? AND phone = ? LIMIT 1",
+                    [project_id, phone]
+                );
+                if (suppressionRows.length > 0) {
+                    await pool.query(
+                        "UPDATE campaign_messages SET status = 'failed', failed_reason = ? WHERE unique_id = ? AND campaign_id = ?",
+                        ["Recipient opted out; message was not sent", unique_id, campaign_id_inner]
+                    );
+                    continue;
+                }
+            }
 
             if (typeof component === 'string') {
                 try {

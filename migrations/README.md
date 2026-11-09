@@ -42,3 +42,16 @@ Conversation labels use the project's CRM tag catalog but are mapped separately
 to each conversation. Internal notes are stored outside the messages/provider
 pipeline and can only be read or created by active members of the conversation's
 project. Run the server checks with `npm test`.
+
+## Campaign retargeting and opt-out suppression
+
+Before deploying report-derived campaign audiences, apply:
+
+```powershell
+npm run migrate:campaign-suppressions
+```
+
+The migration creates the project-scoped suppression ledger used for inbound
+STOP/UNSUBSCRIBE requests and campaign send-time exclusion. Retargeting can use
+delivery/read/failure statuses and interactive WhatsApp replies; ordinary URL
+clicks are not tracked by the current campaign/reporting implementation.

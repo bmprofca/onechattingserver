@@ -20,6 +20,7 @@ import {
 import { handleAutoReply, hasMatchingAutoReplyRule } from "../helpers/autoReplyAgent.js";
 import { handleFlowBuilder } from "../helpers/flowBuilder.js";
 import { getInteractiveDisplayText, getInteractiveFromRawJson, getInteractiveFromWebhookMessage } from "../helpers/interactiveMessage.js";
+import { getConsentCommand, normalizeSuppressionPhone } from "../helpers/campaign/retargeting.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -406,6 +407,51 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
                 const unique_id = RANDOM_STRING(30);
                 const wamid = message?.id;
                 const sender = message?.from;
+                const consentText = messageType === "text"
+                    ? message?.text?.body
+                    : messageType === "button"
+                        ? message?.button?.text
+                        : "";
+                const consentCommand = getConsentCommand(consentText);
+
+                if (consentCommand && sender) {
+                    const phone = normalizeSuppressionPhone(sender);
+                    if (consentCommand === "opt_out" && phone) {
+                        await pool.query(
+                            `INSERT INTO campaign_suppressions (project_id, phone, opt_out_date, source)
+                             VALUES (?, ?, ?, 'whatsapp')
+                             ON DUPLICATE KEY UPDATE opt_out_date = VALUES(opt_out_date), source = VALUES(source)`,
+                            [project_id, phone, TIMESTAMP()]
+                        );
+                    } else if (consentCommand === "opt_in" && phone) {
+                        await pool.query(
+                            "DELETE FROM campaign_suppressions WHERE project_id = ? AND phone = ?",
+                            [project_id, phone]
+                        );
+                    }
+                }
+
+                if (sender && wamid && ["button", "interactive"].includes(messageType) && message?.context?.id) {
+                    const [campaignMessages] = await pool.query(
+                        "SELECT campaign_id FROM campaign_messages WHERE project_id = ? AND wamid = ? AND number = ? LIMIT 1",
+                        [project_id, message.context.id, normalizeSuppressionPhone(sender)]
+                    );
+                    if (campaignMessages.length > 0) {
+                        await pool.query(
+                            `INSERT IGNORE INTO campaign_message_clicks
+                                (project_id, campaign_id, phone, inbound_wamid, click_type, create_date)
+                             VALUES (?, ?, ?, ?, ?, ?)`,
+                            [
+                                project_id,
+                                campaignMessages[0].campaign_id,
+                                normalizeSuppressionPhone(sender),
+                                wamid,
+                                `${messageType}_reply`,
+                                TIMESTAMP()
+                            ]
+                        );
+                    }
+                }
 
                 if (wamid) {
                     const [existingMessage] = await pool.query("SELECT unique_id FROM messages WHERE wamid = ? LIMIT 1", [wamid]);
@@ -749,7 +795,7 @@ async function __handleWebhookPayload(project_id, json, raw_json) {
 
                     // Flow Builder handles all supported incoming messages first.
                     // Matching Auto Reply rules take priority over an active flow.
-                    if (type === 'in' && !is_forwarded) {
+                    if (consentCommand !== "opt_out" && type === 'in' && !is_forwarded) {
                         let rawMessage = {};
                         try { rawMessage = typeof element.raw_json === "string" ? JSON.parse(element.raw_json) : (element.raw_json || {}); } catch { rawMessage = {}; }
                         const interactiveReply = rawMessage?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.list_reply
