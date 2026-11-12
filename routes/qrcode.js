@@ -110,8 +110,6 @@ router.get("/admin/all", authAdmin, async (req, res) => {
                     ...qr,
                     whatsapp_url: buildWhatsAppQrLink({
                         phoneNumber: wa_number,
-                        projectId: row.project_id,
-                        qrId: row.qr_id,
                     }),
                 };
             }),
@@ -256,8 +254,6 @@ router.get("/admin/list/:project_id", authAdmin, async (req, res) => {
                     ...qr,
                     whatsapp_url: buildWhatsAppQrLink({
                         phoneNumber: wa_number,
-                        projectId: row.project_id,
-                        qrId: row.qr_id,
                     }),
                 };
             }),
@@ -383,8 +379,6 @@ router.post("/list", auth, async (req, res) => {
                     ...qr,
                     whatsapp_url: buildWhatsAppQrLink({
                         phoneNumber: wa_number,
-                        projectId: row.project_id,
-                        qrId: row.qr_id,
                     }),
                 };
             }),

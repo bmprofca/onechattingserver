@@ -1,9 +1,7 @@
-export function buildWhatsAppQrLink({ phoneNumber, projectId, qrId }) {
+export function buildWhatsAppQrLink({ phoneNumber }) {
     const phone = String(phoneNumber || "").replace(/\D/g, "");
-    const project = String(projectId || "").trim();
-    const qr = String(qrId || "").trim();
-    if (!/^\d{7,15}$/.test(phone) || !project || !qr) return "";
+    if (!/^\d{7,15}$/.test(phone)) return "";
 
-    const message = `Hello! I'd like to connect. (Project ID: ${project}) [Ref: ${qr}]`;
+    const message = "Hello! I'd like to connect.";
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
