@@ -6,6 +6,7 @@ import { auth } from "../middleware/auth.js";
 import { sendOtpSms } from "../helpers/sms.js";
 import { sendOtpWhatsApp } from "../helpers/whatsapp.js";
 import { getAdminByToken } from "../helpers/adminDb.js";
+import { buildWhatsAppQrLink } from "../helpers/qrcodeLink.js";
 import crypto from "crypto";
 
 const router = express.Router();
@@ -103,7 +104,17 @@ router.get("/admin/all", authAdmin, async (req, res) => {
 
         return res.status(200).json({
             error: false,
-            qr_codes: rows,
+            qr_codes: rows.map((row) => {
+                const { wa_number, ...qr } = row;
+                return {
+                    ...qr,
+                    whatsapp_url: buildWhatsAppQrLink({
+                        phoneNumber: wa_number,
+                        projectId: row.project_id,
+                        qrId: row.qr_id,
+                    }),
+                };
+            }),
             projects,
             all_projects: allProjects,
             pagination: { page, limit, total: Number(countRow.total) || 0, total_pages: Math.max(1, Math.ceil(Number(countRow.total || 0) / limit)) },
@@ -228,13 +239,28 @@ router.get("/admin/list/:project_id", authAdmin, async (req, res) => {
         const { project_id } = req.params;
 
         const [rows] = await pool.query(
-            "SELECT qr_id, project_id, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? ORDER BY create_date DESC",
+            `SELECT q.qr_id, q.project_id, q.status, q.scan_count, q.create_date, q.modify_date,
+                    p.wa_number
+             FROM project_qr_codes q
+             LEFT JOIN aisensy_projects p ON p.project_id = q.project_id
+             WHERE q.project_id = ?
+             ORDER BY q.create_date DESC`,
             [project_id]
         );
 
         return res.status(200).json({
             error: false,
-            qr_codes: rows,
+            qr_codes: rows.map((row) => {
+                const { wa_number, ...qr } = row;
+                return {
+                    ...qr,
+                    whatsapp_url: buildWhatsAppQrLink({
+                        phoneNumber: wa_number,
+                        projectId: row.project_id,
+                        qrId: row.qr_id,
+                    }),
+                };
+            }),
         });
     } catch (error) {
         console.error("QR list error:", error);
@@ -340,13 +366,28 @@ router.post("/list", auth, async (req, res) => {
         }
 
         const [rows] = await pool.query(
-            "SELECT qr_id, project_id, status, scan_count, create_date, modify_date FROM project_qr_codes WHERE project_id = ? AND status = '1' ORDER BY create_date DESC",
+            `SELECT q.qr_id, q.project_id, q.status, q.scan_count, q.create_date, q.modify_date,
+                    p.wa_number
+             FROM project_qr_codes q
+             LEFT JOIN aisensy_projects p ON p.project_id = q.project_id
+             WHERE q.project_id = ? AND q.status = '1'
+             ORDER BY q.create_date DESC`,
             [project_id]
         );
 
         return res.status(200).json({
             error: false,
-            qr_codes: rows,
+            qr_codes: rows.map((row) => {
+                const { wa_number, ...qr } = row;
+                return {
+                    ...qr,
+                    whatsapp_url: buildWhatsAppQrLink({
+                        phoneNumber: wa_number,
+                        projectId: row.project_id,
+                        qrId: row.qr_id,
+                    }),
+                };
+            }),
         });
     } catch (error) {
         console.error("Client QR list error:", error);
