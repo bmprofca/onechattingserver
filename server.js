@@ -38,6 +38,7 @@ import flowBuilderRouter from "./routes/flowBuilder.js";
 import publicWebsiteRouter from "./publicRoutes/website.js";
 import websiteAdminRouter from "./routes/websiteAdmin.js";
 import settingsAdminRouter from "./routes/settingsAdmin.js";
+import onboardingRouter from "./routes/onboarding.js";
 import { ensureDeviceTokenTable } from "./helpers/fcm.js";
 import { getConfig, getConfigBool, getConfigNumber, loadRuntimeConfig } from "./helpers/runtimeConfig.js";
 import { apiContract, notFoundHandler, errorHandler } from "./middleware/apiContract.js";
@@ -159,6 +160,7 @@ app.use("/flow-builder", flowBuilderRouter);
 app.use("/subscription", subscriptionRouter);
 app.use("/qrcode", qrcodeRouter);
 app.use("/admin/qrcode", qrcodeRouter);
+app.use("/onboarding", onboardingRouter);
 
 app.use("/admin/tech-provider", techProviderRouter);
 app.use("/tech-provider", techProviderRouter);

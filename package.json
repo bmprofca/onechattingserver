@@ -4,7 +4,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "node --test test/autoReplyRules.test.js test/crmAttributes.test.js test/inboxProductivity.test.js test/campaignRetargeting.test.js test/contactTimeline.test.js",
+    "test": "node --test test/autoReplyRules.test.js test/crmAttributes.test.js test/inboxProductivity.test.js test/campaignRetargeting.test.js test/contactTimeline.test.js test/onboardingSettings.test.js test/widget.test.js",
     "test:auto-reply-rules": "node --test test/autoReplyRules.test.js",
     "migrate:contact-timeline": "node scripts/migrate-contact-timeline.js",
     "migrate:inbox-productivity": "node scripts/migrate-inbox-productivity.js",
