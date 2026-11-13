@@ -3,12 +3,17 @@ const router = express.Router();
 import pool from "../db.js";
 import { AISENSY_PROJECT_DATA, GENERATE_EMAIL_ADDRESS, GENERATE_PASSWORD, GET_ADMIN_OF_PROJECT, GET_BALANCE_BY_USERNAME, GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP, TODAY_DATE, USER_DATA } from "../helpers/function.js";
 import { Decrypt } from "../helpers/Decrypt.js";
-import { auth } from "../middleware/auth.js";
+import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
 import axios from "axios";
 import { BASE_DOMAIN, TEMPLATE_CHARGES } from "../helpers/Config.js";
 import { activateProjectServices } from "../helpers/aisensyBilling.js";
 import { ensureProjectWebhook } from "../helpers/SetWebhookSubscription.js";
 import { getActiveTechProvider, subscribeMetaWabaWebhook, exchangeMetaEmbeddedSignupCode } from "../helpers/techProvider.js";
+import {
+    buildCampaignReportRowsQuery,
+    buildCampaignReportScope,
+    parseCampaignReportRequest
+} from "../helpers/campaignReport.js";
 
 const FIRM_TYPES = ["Proprietorship", "Partnership", "LLP", "Private Limited", "Public Limited", "Other"];
 const TEAM_VOLUMES = ["1-5", "6-20", "21-50", "51-200", "200+"];
@@ -441,81 +446,178 @@ router.post("/dashboard", auth, async (req, res) => {
         return res.status(200).json({ error: 'Failed to decrypt data' });
     }
 
-    const username = req.headers["username"] ? req.headers["username"] : '';
-    const project_id = decrypt.project_id;
+    const project_id = typeof decrypt.project_id === "string" ? decrypt.project_id.trim() : "";
 
     if (!project_id) {
         return res.status(200).json({ error: 'Provide all mandatory fields' });
     }
 
-    const [contact_row] = await pool.query("SELECT * FROM contacts WHERE project_id = ? AND is_deleted = ?", [project_id, '0']);
-    const [message_row] = await pool.query("SELECT * FROM messages WHERE project_id = ?", [project_id]);
-    const [today_out_row] = await pool.query("SELECT * FROM messages WHERE project_id = ? AND status IN (?) AND DATE(create_date) = ?", [project_id, ['sent', 'delivered', 'read'], TODAY_DATE()]);
-    const [chat_row] = await pool.query("SELECT * FROM messages WHERE project_id = ? GROUP BY number", [project_id]);
-
-
-    const [campaign_row] = await pool.query("SELECT * FROM `campaigns` WHERE project_id = ?", [project_id]);
-
-
-    const [campaign_message_row] = await pool.query(`SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent, SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) AS \`read\`, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed FROM campaign_messages WHERE project_id = ? AND status != 'failed'`, [project_id]);
-
-    const total_messages = Number(campaign_message_row[0]?.total);
-    const pending_messages = Number(campaign_message_row[0]?.pending);
-    const sent_messages = Number(campaign_message_row[0]?.sent);
-    const delivered_messages = Number(campaign_message_row[0]?.delivered);
-    const read_messages = Number(campaign_message_row[0]?.read);
-    const failed_messages = Number(campaign_message_row[0]?.failed);
-
-    const [template_row] = await pool.query(`SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END) AS approved, SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected, SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending FROM templates WHERE project_id = ? AND is_deleted = '0'`, [project_id]);
-
-    const total_template = Number(template_row[0]?.total);
-    const approved_template = Number(template_row[0]?.approved);
-    const pending_template = Number(template_row[0]?.pending);
-    const rejected_template = Number(template_row[0]?.rejected);
-
-    const [scanned_users_row] = await pool.query(
-        "SELECT COUNT(*) AS total FROM qr_scanned_users WHERE project_id = ? AND status = '1'",
-        [project_id]
-    );
-    const total_scanned_users = Number(scanned_users_row[0]?.total) || 0;
-
-    return res.status(200).json({
-        error: false,
-        data: {
-            campaign: {
-                total: campaign_row.length,
-                message: {
-                    total: total_messages,
-                    pending: pending_messages,
-                    sent: sent_messages,
-                    delivered: delivered_messages,
-                    failed: failed_messages,
-                    read: read_messages,
-                }
-            },
-            template: {
-                total: total_template,
-                pending: pending_template,
-                approved: approved_template,
-                rejected: rejected_template,
-            },
-            contact: {
-                total: contact_row.length
-            },
-            chat: {
-                total: chat_row.length,
-            },
-            message: {
-                total: message_row.length,
-                today_sent: today_out_row.length
-            },
-            qr_scanned_users: {
-                total: total_scanned_users
-            }
+    try {
+        const username = String(req.headers["username"] || "");
+        const isProjectMember = await CheckUserProjectMaping(username, project_id);
+        if (!isProjectMember) {
+            return res.status(403).json({ error: "User is not assigned on the project" });
         }
-    })
+
+        const [
+            [contact_row],
+            [message_row],
+            [today_out_row],
+            [chat_row],
+            [campaign_row],
+            [campaign_message_row],
+            [template_row],
+            [scanned_users_row]
+        ] = await Promise.all([
+            pool.query("SELECT COUNT(*) AS total FROM contacts WHERE project_id = ? AND is_deleted = ?", [project_id, '0']),
+            pool.query("SELECT COUNT(*) AS total FROM messages WHERE project_id = ?", [project_id]),
+            pool.query("SELECT COUNT(*) AS total FROM messages WHERE project_id = ? AND status IN (?) AND DATE(create_date) = ?", [project_id, ['sent', 'delivered', 'read'], TODAY_DATE()]),
+            pool.query("SELECT COUNT(DISTINCT number) AS total FROM messages WHERE project_id = ?", [project_id]),
+            pool.query("SELECT COUNT(*) AS total FROM campaigns WHERE project_id = ?", [project_id]),
+            pool.query(`SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent, SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) AS \`read\`, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed FROM campaign_messages WHERE project_id = ?`, [project_id]),
+            pool.query(`SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END) AS approved, SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected, SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS pending FROM templates WHERE project_id = ? AND is_deleted = '0'`, [project_id]),
+            pool.query("SELECT COUNT(*) AS total FROM qr_scanned_users WHERE project_id = ? AND status = '1'", [project_id])
+        ]);
+
+        const total_messages = Number(campaign_message_row[0]?.total) || 0;
+        const pending_messages = Number(campaign_message_row[0]?.pending) || 0;
+        const sent_messages = Number(campaign_message_row[0]?.sent) || 0;
+        const delivered_messages = Number(campaign_message_row[0]?.delivered) || 0;
+        const read_messages = Number(campaign_message_row[0]?.read) || 0;
+        const failed_messages = Number(campaign_message_row[0]?.failed) || 0;
+
+        const total_template = Number(template_row[0]?.total) || 0;
+        const approved_template = Number(template_row[0]?.approved) || 0;
+        const pending_template = Number(template_row[0]?.pending) || 0;
+        const rejected_template = Number(template_row[0]?.rejected) || 0;
+        const total_scanned_users = Number(scanned_users_row[0]?.total) || 0;
+
+        return res.status(200).json({
+            error: false,
+            data: {
+                campaign: {
+                    total: Number(campaign_row[0]?.total) || 0,
+                    message: {
+                        total: total_messages,
+                        pending: pending_messages,
+                        sent: sent_messages,
+                        delivered: delivered_messages,
+                        failed: failed_messages,
+                        read: read_messages,
+                    }
+                },
+                template: {
+                    total: total_template,
+                    pending: pending_template,
+                    approved: approved_template,
+                    rejected: rejected_template,
+                },
+                contact: {
+                    total: Number(contact_row[0]?.total) || 0
+                },
+                chat: {
+                    total: Number(chat_row[0]?.total) || 0,
+                },
+                message: {
+                    total: Number(message_row[0]?.total) || 0,
+                    today_sent: Number(today_out_row[0]?.total) || 0
+                },
+                qr_scanned_users: {
+                    total: total_scanned_users
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Failed to load project dashboard:", error);
+        return res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
 
 
+});
+
+router.post("/report", auth, async (req, res) => {
+    const data = req.body?.data ?? req.body ?? "";
+    const key = req.body?.key || "";
+    const decrypt = Decrypt(data, key);
+    if (!decrypt) {
+        return res.status(400).json({ error: "Invalid report request." });
+    }
+
+    const request = parseCampaignReportRequest(decrypt);
+    if (request.error) {
+        return res.status(400).json({ error: request.error });
+    }
+
+    try {
+        const username = String(req.headers["username"] || "");
+        const isProjectMember = await CheckUserProjectMaping(username, request.projectId);
+        if (!isProjectMember) {
+            return res.status(403).json({ error: "User is not assigned on the project" });
+        }
+
+        const scope = buildCampaignReportScope(request);
+        const [summaryRows] = await pool.query(
+            `SELECT COUNT(*) AS total,
+                    COALESCE(SUM(CASE WHEN cm.status IN ('sent', 'delivered', 'read') THEN 1 ELSE 0 END), 0) AS sent,
+                    COALESCE(SUM(CASE WHEN cm.status IN ('delivered', 'read') THEN 1 ELSE 0 END), 0) AS delivered,
+                    COALESCE(SUM(CASE WHEN cm.status = 'read' THEN 1 ELSE 0 END), 0) AS \`read\`,
+                    COALESCE(SUM(CASE WHEN cm.status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+                    COALESCE(SUM(CASE WHEN cm.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+                    MAX(cm.id) AS snapshot_id
+             FROM campaign_messages cm
+             WHERE ${scope.where}`,
+            scope.params
+        );
+        const reportSummary = summaryRows[0] || {};
+        const total = Number(reportSummary.total) || 0;
+        const snapshotId = Number(reportSummary.snapshot_id) || null;
+        const rowsScope = buildCampaignReportScope({
+            ...request,
+            snapshotId
+        });
+        const rowsQuery = buildCampaignReportRowsQuery({
+            scope: rowsScope,
+            cursor: request.cursor,
+            limit: request.limit
+        });
+        const [reportRows] = await pool.query(rowsQuery.sql, rowsQuery.params);
+        const hasMore = reportRows.length > request.limit;
+        const visibleRows = (hasMore ? reportRows.slice(0, request.limit) : reportRows).map((row) => ({
+            campaign_name: row.campaign_name || "",
+            recipient: row.recipient || "",
+            status: row.status || "",
+            template_name: row.template_name || "",
+            create_date: row.create_date
+        }));
+        const nextCursor = hasMore ? reportRows[request.limit - 1].id : null;
+
+        return res.status(200).json({
+            error: false,
+            data: {
+                summary: {
+                    total,
+                    sent: Number(reportSummary.sent) || 0,
+                    delivered: Number(reportSummary.delivered) || 0,
+                    read: Number(reportSummary.read) || 0,
+                    pending: Number(reportSummary.pending) || 0,
+                    failed: Number(reportSummary.failed) || 0
+                },
+                rows: visibleRows
+            },
+            meta: {
+                page: request.page,
+                limit: request.limit,
+                total,
+                total_pages: Math.ceil(total / request.limit),
+                has_more: hasMore,
+                next_cursor: nextCursor,
+                snapshot_id: snapshotId
+            }
+        });
+    } catch (error) {
+        console.error("Failed to load campaign report:", error);
+        return res.status(500).json({ error: "Failed to fetch campaign report" });
+    }
 });
 
 const GetPermissionStatus = async (permission_id, permission) => {

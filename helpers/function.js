@@ -221,6 +221,7 @@ async function MOVE_MEDIA(fileUrl, folderPath) {
         "txt",
         "csv",
         "mp4",
+        "m4a",
         "mp3",
         "aac",
         "amr",
