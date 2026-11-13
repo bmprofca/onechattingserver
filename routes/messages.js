@@ -54,16 +54,22 @@ router.post("/chat-list", auth, async (req, res) => {
     }
     var search = rawSearch.trim();
     const requestedFilter = decrypt.view ?? decrypt.filter ?? decrypt.filter_type ?? decrypt.type ?? "all";
-    const supportedFilters = ["all", "unread", "favourites", "assigned", "my_open", "unassigned", "sla_breach", "vip"];
+    const supportedFilters = ["all", "unread", "favourites", "assigned", "my_open", "unassigned", "sla_breach"];
     if (typeof requestedFilter !== "string" || !supportedFilters.includes(requestedFilter)) {
         return res.status(200).json({ error: "Invalid inbox view" });
     }
     var filter = requestedFilter;
     const hasTagFilter = decrypt.tag_id !== undefined && decrypt.tag_id !== null && decrypt.tag_id !== '';
     if (hasTagFilter && (typeof decrypt.tag_id !== 'string' || !decrypt.tag_id.trim() || decrypt.tag_id.trim().length > 100)) {
-        return res.status(200).json({ error: 'Invalid conversation label filter' });
+        return res.status(200).json({ error: 'Invalid tag or conversation label filter' });
+    }
+    const requestedTagType = decrypt.tag_type ?? 'both';
+    const supportedTagTypes = ['both', 'contact', 'conversation'];
+    if (hasTagFilter && (typeof requestedTagType !== 'string' || !supportedTagTypes.includes(requestedTagType))) {
+        return res.status(200).json({ error: 'Invalid tag or conversation label type' });
     }
     const filterTagId = hasTagFilter ? decrypt.tag_id.trim() : '';
+    const filterTagType = hasTagFilter ? requestedTagType : '';
 
     const check_project_mapping = await CheckUserProjectMaping(username, project_id);
     if (!check_project_mapping) {
@@ -73,7 +79,38 @@ router.post("/chat-list", auth, async (req, res) => {
     let baseArgs = [username, project_id];
     let tagCondition = "";
     if (filterTagId) {
-        tagCondition = " AND EXISTS (SELECT 1 FROM conversation_label_mapping clm INNER JOIN crm_tags clt ON clt.project_id = clm.project_id AND clt.tag_id = clm.tag_id AND clt.is_deleted = 0 WHERE clm.project_id = m.project_id AND clm.number = m.number AND clm.tag_id = ? AND clm.is_deleted = 0) ";
+        const tagMatchConditions = [];
+        if (filterTagType === 'both' || filterTagType === 'contact') {
+            tagMatchConditions.push(`EXISTS (
+                SELECT 1
+                FROM contact_tag_mapping ctm
+                INNER JOIN contacts tagged_contact
+                  ON tagged_contact.project_id = ctm.project_id
+                 AND tagged_contact.contact_id = ctm.contact_id
+                 AND tagged_contact.is_deleted = '0'
+                WHERE ctm.project_id = m.project_id
+                  AND tagged_contact.number = m.number
+                  AND ctm.tag_id = selected_tag.tag_id
+                  AND ctm.is_deleted = 0
+            )`);
+        }
+        if (filterTagType === 'both' || filterTagType === 'conversation') {
+            tagMatchConditions.push(`EXISTS (
+                SELECT 1
+                FROM conversation_label_mapping clm
+                WHERE clm.project_id = m.project_id
+                  AND clm.number = m.number
+                  AND clm.tag_id = selected_tag.tag_id
+                  AND clm.is_deleted = 0
+            )`);
+        }
+        tagCondition = ` AND EXISTS (
+            SELECT 1 FROM crm_tags selected_tag
+            WHERE selected_tag.project_id = m.project_id
+              AND selected_tag.tag_id = ?
+              AND selected_tag.is_deleted = 0
+              AND (${tagMatchConditions.join(' OR ')})
+        ) `;
         baseArgs.push(filterTagId);
     }
     let searchCondition = "";
@@ -98,8 +135,6 @@ router.post("/chat-list", auth, async (req, res) => {
         havingCondition = " HAVING is_favorite = 'yes' ";
     } else if (filter === 'assigned') {
         havingCondition = " HAVING is_assigned = 'yes' ";
-    } else if (filter === 'vip') {
-        havingCondition = " HAVING is_favorite = 'yes' ";
     } else if (filter === 'my_open') {
         havingCondition = " HAVING inbox_status = 'open' AND is_assigned = 'yes' ";
     } else if (filter === 'unassigned') {
@@ -215,15 +250,20 @@ router.post("/chat-list", auth, async (req, res) => {
             var is_favorite = element.is_favorite == 'yes' ? true : false;
             var case_open_count = Number(element.case_open_count) || 0;
             var unread_count = element.unread_count;
+            const contactTags = tagsByNumber.get(String(number)) || [];
+            const conversationLabels = labelsByNumber.get(String(number)) || [];
+            const is_vip = [...contactTags, ...conversationLabels].some(
+                (tag) => String(tag.name || '').trim().toLowerCase() === 'vip'
+            );
 
             var object = {
                 contact: {
                     number,
                     name,
                     is_favorite,
-                    is_vip: is_favorite,
-                    tags: tagsByNumber.get(String(number)) || [],
-                    labels: labelsByNumber.get(String(number)) || []
+                    is_vip,
+                    tags: contactTags,
+                    labels: conversationLabels
                 },
                 inbox_status: element.inbox_status || 'open',
                 case_open_count,
