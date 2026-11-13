@@ -37,10 +37,15 @@ router.use(authAdmin);
 router.get("/", async (req, res) => {
     try {
         const group = String(req.query.group || "").trim();
-        const settings = (await listSettings(group ? { group } : {})).map((item) => ({
+        const includeWebsite = String(req.query.include_website || "") === "1";
+        let settings = (await listSettings(group ? { group } : {})).map((item) => ({
             ...item,
             system: isManagedSetting(item.setting_key),
         }));
+        // Website contact is edited on Settings → Contact & Support via /admin/website.
+        if (!group && !includeWebsite) {
+            settings = settings.filter((item) => item.setting_group !== "website");
+        }
         return res.status(200).json({ error: false, settings });
     } catch (error) {
         console.error("admin settings list error:", error);

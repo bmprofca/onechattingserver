@@ -1,45 +1,26 @@
 import express from "express";
+import {
+    buildSupportPayload,
+    getWebsiteContact,
+} from "../helpers/websiteContent.js";
 
 const router = express.Router();
 
-router.get("/support", async (req, res) => {
-
-    return res.status(200).json({
-        error: false,
-        data: {
-            phone: [
-                {
-                    number: "917364076458",
-                    type: "Technical Support"
-                },
-                {
-                    number: "917364076458",
-                    type: "Sales Support"
-                }
-            ],
-            whatsapp: [
-                {
-                    number: "917364076458",
-                    type: "Technical Support"
-                },
-                {
-                    number: "917364076458",
-                    type: "Sales Support"
-                }
-            ],
-            email: [
-                {
-                    email: "souravadhikary1916@gmail.com",
-                    type: "Technical Support"
-                },
-                {
-                    email: "souravadhikary1916@gmail.com",
-                    type: "Sales Support"
-                }
-            ]
-        },
-        msg: "Support details fetch successfully"
-    })
+router.get("/support", async (_req, res) => {
+    try {
+        const contact = await getWebsiteContact({ publicOnly: true });
+        return res.status(200).json({
+            error: false,
+            data: buildSupportPayload(contact),
+            msg: "Support details fetch successfully",
+        });
+    } catch (error) {
+        console.error("company support error:", error);
+        return res.status(500).json({
+            error: true,
+            message: "Failed to fetch support information",
+        });
+    }
 });
 
 export default router;

@@ -34,8 +34,8 @@ const CONTACT_FIELDS = [
     { key: "legal_name", label: "Legal name shown in footer", value_type: "text", sort_order: 2 },
     { key: "cin", label: "CIN", value_type: "text", sort_order: 3 },
     { key: "address", label: "Address", value_type: "textarea", sort_order: 4 },
-    { key: "phone", label: "Phone", value_type: "text", sort_order: 5 },
-    { key: "phone_note", label: "Phone note", value_type: "text", sort_order: 6 },
+    { key: "phone", label: "Phone / WhatsApp", value_type: "text", sort_order: 5 },
+    { key: "phone_note", label: "Support hours note", value_type: "text", sort_order: 6 },
     { key: "email", label: "Email", value_type: "text", sort_order: 7 },
     { key: "email_note", label: "Email note", value_type: "text", sort_order: 8 },
     { key: "website", label: "Website URL", value_type: "text", sort_order: 9 },
@@ -353,8 +353,10 @@ async function refreshPublicContactDefaults() {
     if (!existing.address || shortAddressValues.has(String(existing.address).trim())) {
         updates.push(["address", DEFAULT_CONTACT.address]);
     }
-    if (!existing.phone || shortPhoneValues.has(String(existing.phone).trim())) {
-        updates.push(["phone", DEFAULT_CONTACT.phone]);
+    const storedPhone = existing.phone ? String(existing.phone).trim() : "";
+    const formattedPhone = formatPublicPhone(storedPhone || DEFAULT_CONTACT.phone);
+    if (!storedPhone || shortPhoneValues.has(storedPhone) || storedPhone !== formattedPhone) {
+        updates.push(["phone", formattedPhone]);
     }
     if (!existing.email) {
         updates.push(["email", DEFAULT_CONTACT.email]);
@@ -468,15 +470,53 @@ async function seedWebsiteSettings() {
     }
 }
 
+/** Digits only, with India country code when a 10-digit mobile is given. */
+export function toSupportPhoneDigits(phone) {
+    const digits = String(phone || "").replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 10) return `91${digits}`;
+    if (digits.startsWith("0") && digits.length === 11) return `91${digits.slice(1)}`;
+    return digits;
+}
+
+/** Display form used on the public website, e.g. +91 70026 95990. */
+export function formatPublicPhone(phone) {
+    const digits = toSupportPhoneDigits(phone);
+    if (digits.startsWith("91") && digits.length === 12) {
+        return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+    }
+    if (digits) return `+${digits}`;
+    return String(phone || "").trim();
+}
+
+export function buildSupportPayload(contact = {}) {
+    const phoneDigits = toSupportPhoneDigits(contact.phone || DEFAULT_CONTACT.phone);
+    const email = String(contact.email || DEFAULT_CONTACT.email || "").trim();
+    const hours = String(contact.phone_note || DEFAULT_CONTACT.phone_note || "").trim();
+    const channels = [];
+    if (phoneDigits) {
+        channels.push({ number: phoneDigits, type: "Support" });
+    }
+    return {
+        phone: channels,
+        whatsapp: channels.map((item) => ({ ...item })),
+        email: email ? [{ email, type: "Support" }] : [],
+        hours,
+    };
+}
+
 export async function getWebsiteContact({ publicOnly = false } = {}) {
     await ensureWebsiteTables();
     const stored = await getSettingsMap(WEBSITE_SETTING_GROUP, { publicOnly });
-    return { ...DEFAULT_CONTACT, ...stored };
+    const contact = { ...DEFAULT_CONTACT, ...stored };
+    if (contact.phone) contact.phone = formatPublicPhone(contact.phone);
+    return contact;
 }
 
 export async function saveWebsiteContact(contact) {
     await ensureWebsiteTables();
     const next = { ...DEFAULT_CONTACT, ...contact };
+    if (next.phone) next.phone = formatPublicPhone(next.phone);
     for (const field of CONTACT_FIELDS) {
         await upsertSetting({
             setting_group: WEBSITE_SETTING_GROUP,
