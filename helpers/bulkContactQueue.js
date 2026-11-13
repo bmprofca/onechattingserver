@@ -55,8 +55,8 @@ async function upsertContact({ project_id, username, item }) {
 
     const contact_id = RANDOM_STRING(20);
     await pool.query(
-        "INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [contact_id, project_id, name, number, email, firm_name, website, remark, now, username, now, username, "0"]
+        "INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`, `origin`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [contact_id, project_id, name, number, email, firm_name, website, remark, now, username, now, username, "0", "api"]
     );
 
     const [assigned] = await pool.query(

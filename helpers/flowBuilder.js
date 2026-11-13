@@ -3,6 +3,7 @@ import pool from "../db.js";
 import { GetAiSensyProjectToken, RANDOM_STRING, TIMESTAMP } from "./function.js";
 import { WsIo } from "../server.js";
 import { emitToProjectSockets } from "./socketEmit.js";
+import { isContactInDynamicSegment } from "./dynamicSegments.js";
 
 const MAX_STEPS_PER_MESSAGE = 12;
 const FLOW_EXPIRY_HOURS = 24;
@@ -14,7 +15,13 @@ function parseJson(value, fallback) {
 export function normalizeFlowGraph(graph) {
     const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
     const edges = Array.isArray(graph?.edges) ? graph.edges : [];
-    return { version: Number(graph?.version) || 1, nodes, edges };
+    const audienceSegmentId = graph?.audience_segment_id;
+    return {
+        version: Number(graph?.version) || 1,
+        nodes,
+        edges,
+        ...(audienceSegmentId === undefined || audienceSegmentId === null ? {} : { audience_segment_id: audienceSegmentId }),
+    };
 }
 
 export function validateFlowGraph(graph) {
@@ -31,6 +38,10 @@ export function validateFlowGraph(graph) {
     }
     const starts = value.nodes.filter((node) => node?.type === "start");
     if (starts.length !== 1) errors.push("The flow must contain exactly one start node");
+    if (value.audience_segment_id !== undefined &&
+        (typeof value.audience_segment_id !== "string" || !value.audience_segment_id.trim() || value.audience_segment_id.length > 30)) {
+        errors.push("Flow audience segment id must be a valid segment id");
+    }
     for (const edge of value.edges) {
         if (!nodeIds.has(String(edge?.source)) || !nodeIds.has(String(edge?.target))) errors.push("Every edge must reference existing source and target nodes");
     }
@@ -155,6 +166,11 @@ export async function handleFlowBuilder(projectId, number, input, messageUniqueI
             "SELECT * FROM flow_conversations WHERE flow_id=? AND project_id=? AND number=? AND status='active' AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1",
             [flow.flow_id, projectId, number]
         );
+
+        if (!state && graph.audience_segment_id &&
+            !(await isContactInDynamicSegment(connection, projectId, graph.audience_segment_id, number))) {
+            return false;
+        }
 
         let context = parseJson(state?.context_json, {});
         let current = null;

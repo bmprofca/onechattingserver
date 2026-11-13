@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import pool from "../../db.js";
-import { processInBackgroundExcel, processInBackgroundContacts, processInBackgroundGroups } from "./excel.js";
+import { processInBackgroundExcel, processInBackgroundContacts, processInBackgroundGroups, processInBackgroundSegment } from "./excel.js";
 import { InitiateCampaignMessages } from "./sendMessage.js";
 import { spawnedCampaigns, SPAWN_COOLDOWN_MS, markCampaignSpawned } from "./spawnedCampaigns.js";
 
@@ -166,6 +166,22 @@ async function checkScheduledCampaigns(isStartup = false) {
                         project_id: campaign.project_id,
                         isScheduled: false,
                     });
+                } else if (source === "segment") {
+                    if (!params.segment_id || !params.component) {
+                        continue;
+                    }
+                    markCampaignSpawned(campaign.campaign_id);
+                    processInBackgroundSegment({
+                        segment_id: params.segment_id,
+                        component: params.component,
+                        campaign_id: campaign.campaign_id,
+                        username: campaign.create_by,
+                        template_id: campaign.template_id,
+                        template_name,
+                        language_code,
+                        project_id: campaign.project_id,
+                        isScheduled: false,
+                    }).catch((error) => console.error("[campaign-scheduler] Segment dispatch failed:", error?.message || error));
                 }
             } catch (err) {
 

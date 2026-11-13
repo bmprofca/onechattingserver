@@ -78,3 +78,19 @@ The migration creates the project-scoped suppression ledger used for inbound
 STOP/UNSUBSCRIBE requests and campaign send-time exclusion. Retargeting can use
 delivery/read/failure statuses and interactive WhatsApp replies; ordinary URL
 clicks are not tracked by the current campaign/reporting implementation.
+
+## Dynamic segments
+
+Before deploying dynamic-segment management, campaign audiences, or flow
+audience restrictions, apply:
+
+```powershell
+npm run migrate:dynamic-segments
+```
+
+The migration creates the project-scoped segment-definition table and adds the
+contact `origin` field. Segment filters are stored as validated JSON; preview
+counts do not persist recipients. Campaigns resolve the current recipient set
+when dispatch begins, and flow audience restrictions are checked when a new
+conversation enters the flow. Apply the CRM tags/custom-fields and campaign
+suppression migrations first because segment filters can reference those tables.

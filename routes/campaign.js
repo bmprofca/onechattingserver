@@ -7,11 +7,12 @@ import pool from "../db.js";
 import { BASE_DOMAIN } from "../helpers/Config.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
-import { processInBackgroundExcel, processInBackgroundContacts, processInBackgroundGroups } from "../helpers/campaign/excel.js";
+import { processInBackgroundExcel, processInBackgroundContacts, processInBackgroundGroups, processInBackgroundSegment } from "../helpers/campaign/excel.js";
 import { validateScheduleDate, validateTemplate, insertCampaign } from "../helpers/campaign/createHelper.js";
 import { InitiateCampaignMessages } from "../helpers/campaign/sendMessage.js";
 import { RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
 import { buildRetargetAudienceQuery, getRetargetAudience, normalizeSuppressionPhone } from "../helpers/campaign/retargeting.js";
+import { normalizeSegmentDefinition, SegmentValidationError, validateSegmentReferences } from "../helpers/dynamicSegments.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -270,6 +271,90 @@ router.post("/create/group", auth, async (req, res) => {
     }
 });
 
+router.post("/create/segment", auth, async (req, res) => {
+    try {
+        const decrypt = Decrypt(req.body?.data || "", req.body?.key || "");
+        if (!decrypt) return res.status(200).json({ error: "Failed to decrypt data" });
+
+        const username = String(req.headers.username || "").trim();
+        const segment_id = String(decrypt?.segment_id || "").trim();
+        const component = decrypt?.component;
+        const name = String(decrypt?.name || "").trim();
+        const template_id = String(decrypt?.template_id || "").trim();
+        const project_id = String(decrypt?.project_id || "").trim();
+        if (!segment_id || segment_id.length > 30 || !name || !template_id || !project_id ||
+            !Array.isArray(component) || component.length === 0) {
+            return res.status(400).json({ error: "Provide segment_id, component, name, template_id and project_id" });
+        }
+        if (!(await CheckUserProjectMaping(username, project_id))) {
+            return res.status(403).json({ error: "User is not assigned on the project" });
+        }
+
+        const [segmentRows] = await pool.query(
+            "SELECT definition_json FROM dynamic_segments WHERE project_id = ? AND segment_id = ? AND is_deleted = 0 LIMIT 1",
+            [project_id, segment_id]
+        );
+        if (segmentRows.length === 0) return res.status(404).json({ error: "Segment not found" });
+        const definitionValue = typeof segmentRows[0].definition_json === "string"
+            ? JSON.parse(segmentRows[0].definition_json)
+            : segmentRows[0].definition_json;
+        const definition = normalizeSegmentDefinition(definitionValue);
+        await validateSegmentReferences(pool, project_id, definition);
+
+        let scheduleDateValue, isScheduled;
+        try {
+            ({ scheduleDateValue, isScheduled } = validateScheduleDate(decrypt?.schedule_date || null));
+        } catch (error) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        let template_name, language_code;
+        try {
+            ({ template_name, language_code } = await validateTemplate(project_id, template_id));
+        } catch (error) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        const campaignParams = JSON.stringify({ segment_id, component });
+        const campaign_id = await insertCampaign({
+            username,
+            source: "segment",
+            url: null,
+            name,
+            project_id,
+            template_id,
+            scheduleDateValue,
+            campaignParams,
+        });
+
+        if (!isScheduled) {
+            processInBackgroundSegment({
+                segment_id,
+                component,
+                campaign_id,
+                username,
+                template_id,
+                template_name,
+                language_code,
+                project_id,
+                isScheduled: false,
+            }).catch((error) => console.error("[campaign] Segment campaign dispatch failed:", error?.message || error));
+        }
+
+        return res.status(200).json({
+            error: false,
+            msg: isScheduled ? "Campaign scheduled successfully" : "Campaign created successfully",
+            ...(isScheduled ? { schedule_date: scheduleDateValue } : {}),
+        });
+    } catch (error) {
+        if (error instanceof SegmentValidationError || error instanceof SyntaxError) {
+            return res.status(400).json({ error: error.message });
+        }
+        console.error("[campaign] Failed to create segment campaign:", error?.message || error);
+        return res.status(500).json({ error: "Failed to create segment campaign" });
+    }
+});
+
 router.post("/retargeting/audience", auth, async (req, res) => {
     let connection;
     let transactionStarted = false;
@@ -358,9 +443,9 @@ router.post("/retargeting/audience", auth, async (req, res) => {
             });
             await connection.query(
                 `INSERT INTO contacts
-                    (contact_id, project_id, name, number, create_date, create_by, modify_date, modify_by, is_deleted)
+                    (contact_id, project_id, name, number, create_date, create_by, modify_date, modify_by, is_deleted, origin)
                  VALUES ?`,
-                [contactsToInsert]
+                [contactsToInsert.map((row) => [...row, "campaign"])]
             );
         }
 
@@ -454,7 +539,8 @@ router.post("/duplicate", auth, async (req, res) => {
             "SELECT * FROM campaign_messages WHERE campaign_id = ?",
             [campaign_id]
         );
-        if (!messages || messages.length === 0) {
+        const isSegmentCampaign = origCampaign.source === "segment";
+        if ((!messages || messages.length === 0) && !isSegmentCampaign) {
             return res.status(200).json({ error: "No campaign messages to duplicate" });
         }
 
@@ -467,19 +553,48 @@ router.post("/duplicate", auth, async (req, res) => {
             return res.status(200).json({ error: e.message });
         }
 
+        let segmentParams = null;
+        let segmentTemplate = null;
+        if (isSegmentCampaign) {
+            try {
+                segmentParams = typeof origCampaign.params === "string"
+                    ? JSON.parse(origCampaign.params)
+                    : origCampaign.params;
+                if (!segmentParams?.segment_id || !Array.isArray(segmentParams.component)) {
+                    return res.status(400).json({ error: "Original segment campaign configuration is invalid" });
+                }
+                const [segmentRows] = await pool.query(
+                    "SELECT definition_json FROM dynamic_segments WHERE project_id = ? AND segment_id = ? AND is_deleted = 0 LIMIT 1",
+                    [project_id, segmentParams.segment_id]
+                );
+                if (segmentRows.length === 0) return res.status(404).json({ error: "Campaign segment is no longer available" });
+                const definition = typeof segmentRows[0].definition_json === "string"
+                    ? JSON.parse(segmentRows[0].definition_json)
+                    : segmentRows[0].definition_json;
+                await validateSegmentReferences(pool, project_id, normalizeSegmentDefinition(definition));
+                segmentTemplate = await validateTemplate(project_id, origCampaign.template_id);
+            } catch (error) {
+                if (error instanceof SegmentValidationError || error instanceof SyntaxError) {
+                    return res.status(400).json({ error: error.message });
+                }
+                throw error;
+            }
+        }
+
         const new_campaign_id = RANDOM_STRING(30);
         await pool.query(
             `INSERT INTO campaigns (
                 campaign_id, create_date, create_by, modify_date, modify_by,
                 entry_complete, source, url, has_error, status, name, project_id,
                 template_id, schedule_date, params
-            ) VALUES (?, ?, ?, ?, ?, '1', ?, ?, '0', '0', ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '0', '0', ?, ?, ?, ?, ?)`,
             [
                 new_campaign_id,
                 TIMESTAMP(),
                 username,
                 TIMESTAMP(),
                 username,
+                isSegmentCampaign ? "0" : "1",
                 origCampaign.source || "contact",
                 origCampaign.url || null,
                 name,
@@ -490,27 +605,43 @@ router.post("/duplicate", auth, async (req, res) => {
             ]
         );
 
-        for (const msg of messages) {
-            const unique_id = RANDOM_STRING(30);
-            await pool.query(
-                `INSERT INTO campaign_messages (unique_id, campaign_id, number, create_date, create_by, template_id, template_name, language_code, component, project_id, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-                [
-                    unique_id,
-                    new_campaign_id,
-                    msg.number,
-                    TIMESTAMP(),
+        if (isSegmentCampaign) {
+            if (!isScheduled) {
+                processInBackgroundSegment({
+                    segment_id: segmentParams.segment_id,
+                    component: segmentParams.component,
+                    campaign_id: new_campaign_id,
                     username,
-                    msg.template_id,
-                    msg.template_name,
-                    msg.language_code,
-                    msg.component,
-                    project_id
-                ]
-            );
+                    template_id: origCampaign.template_id,
+                    template_name: segmentTemplate.template_name,
+                    language_code: segmentTemplate.language_code,
+                    project_id,
+                    isScheduled: false,
+                }).catch((error) => console.error("[campaign] Duplicated segment dispatch failed:", error?.message || error));
+            }
+        } else {
+            for (const msg of messages) {
+                const unique_id = RANDOM_STRING(30);
+                await pool.query(
+                    `INSERT INTO campaign_messages (unique_id, campaign_id, number, create_date, create_by, template_id, template_name, language_code, component, project_id, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+                    [
+                        unique_id,
+                        new_campaign_id,
+                        msg.number,
+                        TIMESTAMP(),
+                        username,
+                        msg.template_id,
+                        msg.template_name,
+                        msg.language_code,
+                        msg.component,
+                        project_id
+                    ]
+                );
+            }
         }
 
-        if (!isScheduled) {
+        if (!isScheduled && !isSegmentCampaign) {
             InitiateCampaignMessages({ campaign_id: new_campaign_id });
         }
 

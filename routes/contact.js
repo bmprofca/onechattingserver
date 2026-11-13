@@ -2088,8 +2088,8 @@ router.post("/import-contacts", auth, async (req, res) => {
                     await connection.beginTransaction();
                     const createdAt = TIMESTAMP();
                     await connection.query(
-                    "INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    [contact_id, project_id, name, number, email || null, firm_name || null, website || null, remark || null, createdAt, username, createdAt, username, '0']
+                    "INSERT INTO `contacts`(`contact_id`, `project_id`, `name`, `number`, `email`, `firm_name`, `website`, `remark`, `create_date`, `create_by`, `modify_date`, `modify_by`, `is_deleted`, `origin`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [contact_id, project_id, name, number, email || null, firm_name || null, website || null, remark || null, createdAt, username, createdAt, username, '0', 'import']
                     );
 
                     const [existingAssign] = await connection.query(
@@ -2363,6 +2363,76 @@ router.post("/group-contact-list", auth, async (req, res) => {
         }
     })
 
+});
+
+router.post("/group-campaign-preview", auth, async (req, res) => {
+    const decrypt = Decrypt(req.body?.data || "", req.body?.key || "");
+    if (!decrypt) return res.status(400).json({ error: "Failed to decrypt data" });
+
+    const username = String(req.headers.username || "");
+    const project_id = typeof decrypt.project_id === "string" ? decrypt.project_id.trim() : "";
+    const group_ids = Array.isArray(decrypt.group_ids)
+        ? [...new Set(decrypt.group_ids.map((id) => String(id || "").trim()).filter(Boolean))]
+        : [];
+    const page_no = decrypt.page_no === undefined ? 1 : Number(decrypt.page_no);
+    const requestedLimit = decrypt.limit === undefined ? 25 : Number(decrypt.limit);
+    const limit = Math.min(requestedLimit, 100);
+
+    if (!project_id || project_id.length > 100 || group_ids.length === 0 || group_ids.length > 200 ||
+        group_ids.some((id) => id.length > 100)) {
+        return res.status(400).json({ error: "Provide a valid project_id and 1 to 200 group_ids" });
+    }
+    if (!Number.isInteger(page_no) || page_no < 1 || page_no > 10000 ||
+        !Number.isInteger(requestedLimit) || requestedLimit < 1) {
+        return res.status(400).json({ error: "Invalid page or page size" });
+    }
+    if (!(await CheckUserProjectMaping(username, project_id))) {
+        return res.status(403).json({ error: "User is not assigned to this project" });
+    }
+
+    try {
+        const [activeGroups] = await pool.query(
+            "SELECT group_id FROM contact_groups WHERE project_id = ? AND is_deleted = '0' AND group_id IN (?)",
+            [project_id, group_ids]
+        );
+        if (activeGroups.length !== group_ids.length) {
+            return res.status(404).json({ error: "One or more selected groups are not available in this project" });
+        }
+
+        const [countRows] = await pool.query(
+            `SELECT COUNT(DISTINCT c.contact_id) AS total
+             FROM contact_group_mapping cgm
+             INNER JOIN contact_groups g
+               ON g.group_id = cgm.group_id AND g.project_id = ? AND g.is_deleted = '0'
+             INNER JOIN contacts c
+               ON c.contact_id = cgm.contact_id AND c.project_id = g.project_id AND c.is_deleted = '0'
+             WHERE cgm.group_id IN (?) AND cgm.is_deleted = '0'`,
+            [project_id, group_ids]
+        );
+        const total_records = Number(countRows[0]?.total || 0);
+        const offset = (page_no - 1) * limit;
+        const [rows] = await pool.query(
+            `SELECT DISTINCT c.contact_id, c.name, c.number, c.email
+             FROM contact_group_mapping cgm
+             INNER JOIN contact_groups g
+               ON g.group_id = cgm.group_id AND g.project_id = ? AND g.is_deleted = '0'
+             INNER JOIN contacts c
+               ON c.contact_id = cgm.contact_id AND c.project_id = g.project_id AND c.is_deleted = '0'
+             WHERE cgm.group_id IN (?) AND cgm.is_deleted = '0'
+             ORDER BY c.name ASC, c.contact_id ASC
+             LIMIT ? OFFSET ?`,
+            [project_id, group_ids, limit, offset]
+        );
+        const total_pages = Math.ceil(total_records / limit);
+        return res.json({
+            error: false,
+            data: rows,
+            meta: { page_no, limit, total_records, total_pages, has_more: page_no < total_pages },
+        });
+    } catch (error) {
+        console.error("[group-campaign-preview] Failed to load contacts:", error?.message || error);
+        return res.status(500).json({ error: "Failed to preview selected group contacts" });
+    }
 });
 
 router.post("/contact-groups-by-contact", auth, async (req, res) => {

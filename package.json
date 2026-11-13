@@ -4,11 +4,13 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "node --test test/autoReplyRules.test.js test/crmAttributes.test.js test/inboxProductivity.test.js test/campaignRetargeting.test.js test/contactTimeline.test.js test/onboardingSettings.test.js test/widget.test.js test/qrcodeLink.test.js test/campaignReport.test.js",
+    "test": "node --test test/autoReplyRules.test.js test/dynamicSegments.test.js test/crmAttributes.test.js test/inboxProductivity.test.js test/campaignRetargeting.test.js test/contactTimeline.test.js test/onboardingSettings.test.js test/widget.test.js test/qrcodeLink.test.js test/campaignReport.test.js",
+    "test:dynamic-segments": "node --test test/dynamicSegments.test.js",
     "test:auto-reply-rules": "node --test test/autoReplyRules.test.js",
     "migrate:contact-timeline": "node scripts/migrate-contact-timeline.js",
     "migrate:inbox-productivity": "node scripts/migrate-inbox-productivity.js",
     "migrate:auto-reply-rules": "node scripts/migrate-auto-reply-rules.js",
+    "migrate:dynamic-segments": "node scripts/migrate-dynamic-segments.js",
     "migrate:crm-tags-custom-fields": "node scripts/migrate-crm-tags-custom-fields.js",
     "migrate:campaign-suppressions": "node scripts/migrate-campaign-suppressions.js",
     "start": "node server.js"

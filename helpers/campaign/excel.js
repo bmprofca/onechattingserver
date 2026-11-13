@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { RANDOM_STRING, TIMESTAMP } from "../function.js";
 import { InitiateCampaignMessages } from "./sendMessage.js";
 import { markCampaignSpawned } from "./spawnedCampaigns.js";
+import { resolveSegmentRecipients, SegmentValidationError } from "../dynamicSegments.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -505,6 +506,72 @@ export async function processInBackgroundContacts(data) {
         }
     } catch (error) {
         console.error('[processInBackgroundContacts] Background processing failed:', error?.message || error);
+    }
+}
+
+export async function processInBackgroundSegment(data) {
+    const {
+        segment_id,
+        component,
+        campaign_id,
+        username,
+        template_id,
+        template_name,
+        language_code,
+        project_id,
+        isScheduled = false,
+    } = data;
+
+    if (!template_name || !language_code) return;
+    markCampaignSpawned(campaign_id);
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const [segmentRows] = await connection.query(
+            "SELECT definition_json FROM dynamic_segments WHERE project_id = ? AND segment_id = ? AND is_deleted = 0 LIMIT 1",
+            [project_id, segment_id]
+        );
+        if (segmentRows.length === 0) throw new SegmentValidationError("Campaign segment is no longer available");
+        const definition = typeof segmentRows[0].definition_json === "string"
+            ? JSON.parse(segmentRows[0].definition_json)
+            : segmentRows[0].definition_json;
+        const recipients = await resolveSegmentRecipients(connection, project_id, definition);
+        const contactIds = recipients.map((contact) => String(contact.contact_id)).filter(Boolean);
+
+        if (contactIds.length === 0) {
+            await connection.query(
+                "UPDATE campaigns SET entry_complete = '1', status = '1', modify_date = ? WHERE project_id = ? AND campaign_id = ?",
+                [TIMESTAMP(), project_id, campaign_id]
+            );
+            return;
+        }
+
+        connection.release();
+        connection = null;
+        await processInBackgroundContacts({
+            contact_ids: contactIds,
+            numbers: [],
+            component,
+            campaign_id,
+            username,
+            template_id,
+            template_name,
+            language_code,
+            project_id,
+            isScheduled,
+        });
+    } catch (error) {
+        if (error instanceof SegmentValidationError && connection) {
+            await connection.query(
+                "UPDATE campaigns SET entry_complete = '1', status = '2', has_error = '1', modify_date = ? WHERE project_id = ? AND campaign_id = ?",
+                [TIMESTAMP(), project_id, campaign_id]
+            );
+        }
+        console.error("[processInBackgroundSegment] Segment resolution failed:", error?.message || error);
+        throw error;
+    } finally {
+        connection?.release();
     }
 }
 

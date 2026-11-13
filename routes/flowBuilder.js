@@ -4,6 +4,7 @@ import { auth, CheckUserProjectMaping } from "../middleware/auth.js";
 import { Decrypt } from "../helpers/Decrypt.js";
 import { RANDOM_STRING, TIMESTAMP } from "../helpers/function.js";
 import { normalizeFlowGraph, validateFlowGraph } from "../helpers/flowBuilder.js";
+import { SegmentValidationError, validateSegmentReferences } from "../helpers/dynamicSegments.js";
 
 const router = express.Router();
 
@@ -14,6 +15,19 @@ async function requestData(req, res) {
     const projectId = decrypt.project_id;
     if (!projectId || !(await CheckUserProjectMaping(username, projectId))) { res.status(200).json({ error: "User is not assigned on the project" }); return null; }
     return { decrypt, username, projectId };
+}
+
+async function validateFlowAudience(projectId, graph) {
+    if (!graph.audience_segment_id) return;
+    const [rows] = await pool.query(
+        "SELECT definition_json FROM dynamic_segments WHERE project_id = ? AND segment_id = ? AND is_deleted = 0 LIMIT 1",
+        [projectId, graph.audience_segment_id]
+    );
+    if (rows.length === 0) throw new SegmentValidationError("Flow audience segment is not active in this project");
+    const definition = typeof rows[0].definition_json === "string"
+        ? JSON.parse(rows[0].definition_json)
+        : rows[0].definition_json;
+    await validateSegmentReferences(pool, projectId, definition);
 }
 
 router.get("/status", auth, async (req, res) => {
@@ -42,25 +56,50 @@ router.post("/get", auth, async (req, res) => {
 
 router.post("/create", auth, async (req, res) => {
     const ctx = await requestData(req, res); if (!ctx) return;
-    try { const graph = normalizeFlowGraph(ctx.decrypt.graph || { nodes: [], edges: [] }); const flowId = RANDOM_STRING(30); const now = TIMESTAMP(); await pool.query("INSERT INTO flows (flow_id,project_id,name,description,status,version,draft_json,create_date,create_by,modify_date,modify_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [flowId, ctx.projectId, ctx.decrypt.name || "Untitled flow", ctx.decrypt.description || null, "draft", 1, JSON.stringify(graph), now, ctx.username, now, ctx.username]); return res.json({ error: false, data: { flow_id: flowId, name: ctx.decrypt.name || "Untitled flow", graph }, msg: "Flow created successfully" }); }
+    try { const graph = normalizeFlowGraph(ctx.decrypt.graph || { nodes: [], edges: [] }); await validateFlowAudience(ctx.projectId, graph); const flowId = RANDOM_STRING(30); const now = TIMESTAMP(); await pool.query("INSERT INTO flows (flow_id,project_id,name,description,status,version,draft_json,create_date,create_by,modify_date,modify_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [flowId, ctx.projectId, ctx.decrypt.name || "Untitled flow", ctx.decrypt.description || null, "draft", 1, JSON.stringify(graph), now, ctx.username, now, ctx.username]); return res.json({ error: false, data: { flow_id: flowId, name: ctx.decrypt.name || "Untitled flow", graph }, msg: "Flow created successfully" }); }
     catch (error) { return res.status(200).json({ error: "Failed to create flow", e: error.message }); }
 });
 
 router.post("/update-draft", auth, async (req, res) => {
     const ctx = await requestData(req, res); if (!ctx) return;
-    try { const graph = normalizeFlowGraph(ctx.decrypt.graph); const [result] = await pool.query("UPDATE flows SET name=?,description=?,draft_json=?,modify_date=?,modify_by=? WHERE flow_id=? AND project_id=? AND is_deleted='0'", [ctx.decrypt.name || "Untitled flow", ctx.decrypt.description || null, JSON.stringify(graph), TIMESTAMP(), ctx.username, ctx.decrypt.flow_id, ctx.projectId]); if (!result.affectedRows) return res.status(200).json({ error: "Flow not found" }); return res.json({ error: false, data: graph, msg: "Draft saved successfully" }); }
+    try { const graph = normalizeFlowGraph(ctx.decrypt.graph); await validateFlowAudience(ctx.projectId, graph); const [result] = await pool.query("UPDATE flows SET name=?,description=?,draft_json=?,modify_date=?,modify_by=? WHERE flow_id=? AND project_id=? AND is_deleted='0'", [ctx.decrypt.name || "Untitled flow", ctx.decrypt.description || null, JSON.stringify(graph), TIMESTAMP(), ctx.username, ctx.decrypt.flow_id, ctx.projectId]); if (!result.affectedRows) return res.status(200).json({ error: "Flow not found" }); return res.json({ error: false, data: graph, msg: "Draft saved successfully" }); }
     catch (error) { return res.status(200).json({ error: "Failed to save flow draft", e: error.message }); }
 });
 
 router.post("/validate", auth, async (req, res) => {
     const ctx = await requestData(req, res); if (!ctx) return;
-    const result = validateFlowGraph(ctx.decrypt.graph); return res.json({ error: false, valid: result.valid, errors: result.errors });
+    try {
+        const result = validateFlowGraph(ctx.decrypt.graph);
+        if (result.valid) await validateFlowAudience(ctx.projectId, result.graph);
+        return res.json({ error: false, valid: result.valid, errors: result.valid ? [] : result.errors });
+    } catch (error) {
+        if (error instanceof SegmentValidationError) {
+            return res.json({ error: false, valid: false, errors: [error.message] });
+        }
+        console.error("[flow-builder] Validation failed:", error?.message || error);
+        return res.status(500).json({ error: "Failed to validate flow" });
+    }
 });
 
 router.post("/publish", auth, async (req, res) => {
     const ctx = await requestData(req, res); if (!ctx) return;
-    try { const [[flow]] = await pool.query("SELECT draft_json FROM flows WHERE flow_id=? AND project_id=? AND is_deleted='0' LIMIT 1", [ctx.decrypt.flow_id, ctx.projectId]); if (!flow) return res.status(200).json({ error: "Flow not found" }); const validation = validateFlowGraph(JSON.parse(flow.draft_json)); if (!validation.valid) return res.status(200).json({ error: "Flow is invalid", errors: validation.errors }); await pool.query("UPDATE flows SET published_json=draft_json,status='published',version=version+1,modify_date=?,modify_by=? WHERE flow_id=? AND project_id=?", [TIMESTAMP(), ctx.username, ctx.decrypt.flow_id, ctx.projectId]); return res.json({ error: false, msg: "Flow published successfully", version: validation.graph.version }); }
-    catch (error) { return res.status(200).json({ error: "Failed to publish flow", e: error.message }); }
+    try {
+        const [[flow]] = await pool.query(
+            "SELECT draft_json FROM flows WHERE flow_id=? AND project_id=? AND is_deleted='0' LIMIT 1",
+            [ctx.decrypt.flow_id, ctx.projectId]
+        );
+        if (!flow) return res.status(200).json({ error: "Flow not found" });
+        const validation = validateFlowGraph(JSON.parse(flow.draft_json));
+        if (!validation.valid) return res.status(200).json({ error: "Flow is invalid", errors: validation.errors });
+        await validateFlowAudience(ctx.projectId, validation.graph);
+        await pool.query(
+            "UPDATE flows SET published_json=draft_json,status='published',version=version+1,modify_date=?,modify_by=? WHERE flow_id=? AND project_id=?",
+            [TIMESTAMP(), ctx.username, ctx.decrypt.flow_id, ctx.projectId]
+        );
+        return res.json({ error: false, msg: "Flow published successfully", version: validation.graph.version });
+    } catch (error) {
+        return res.status(200).json({ error: "Failed to publish flow", e: error.message });
+    }
 });
 
 router.post("/toggle", auth, async (req, res) => {
