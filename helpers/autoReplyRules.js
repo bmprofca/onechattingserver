@@ -284,7 +284,16 @@ function matchesKeyword(rule, message) {
 }
 
 export function selectAutoReplyRule(rules, { message, isFirstMessage, now = new Date() }) {
-    for (const rule of rules) {
+    const orderedRules = rules
+        .map((rule, index) => ({ rule, index }))
+        .sort((left, right) =>
+            (left.rule.priority ?? 1) - (right.rule.priority ?? 1) ||
+            (left.rule.id ?? 0) - (right.rule.id ?? 0) ||
+            left.index - right.index
+        );
+
+    for (const { rule } of orderedRules) {
+        if (rule.enabled === false) continue;
         const inSchedule = isScheduleActive(rule, now);
         if (rule.ruleType === "away" && !inSchedule) return rule;
         if (rule.ruleType === "welcome" && isFirstMessage && inSchedule) return rule;

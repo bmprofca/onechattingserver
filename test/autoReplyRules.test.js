@@ -70,12 +70,13 @@ test("evaluates schedule boundaries and weekdays in the rule timezone", () => {
 
 test("selects the first priority-ordered eligible rule with exact matching", () => {
     const rules = [
-        { ruleType: "welcome", businessHours: false },
+        { ruleType: "welcome", businessHours: false, priority: 1 },
         {
             ruleType: "keyword",
             keywords: ["pricing"],
             matchType: "exact",
             businessHours: false,
+            priority: 2,
         },
     ];
     assert.equal(
@@ -89,6 +90,35 @@ test("selects the first priority-ordered eligible rule with exact matching", () 
     assert.equal(
         selectAutoReplyRule(rules, { message: "hello", isFirstMessage: true })?.ruleType,
         "welcome"
+    );
+});
+
+test("selection applies priority, id tie-breaking, and enabled status itself", () => {
+    const lowerPriority = {
+        id: 1,
+        priority: 10,
+        ruleType: "keyword",
+        keywords: ["hello"],
+        matchType: "contains",
+        businessHours: false,
+    };
+    const higherPriority = {
+        id: 9,
+        priority: 1,
+        ruleType: "keyword",
+        keywords: ["hello"],
+        matchType: "contains",
+        businessHours: false,
+    };
+    const tiedLaterId = { ...higherPriority, id: 3 };
+    const disabledFirst = { ...higherPriority, id: 1, enabled: false };
+
+    assert.equal(
+        selectAutoReplyRule([lowerPriority, tiedLaterId, disabledFirst, higherPriority], {
+            message: "hello",
+            isFirstMessage: false,
+        }),
+        tiedLaterId
     );
 });
 
