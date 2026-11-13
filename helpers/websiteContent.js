@@ -90,7 +90,7 @@ const DEFAULT_PAGES = [
 <h2>8. Changes to This Privacy Policy</h2>
 <p>We may update this policy from time to time. Continued use of the platform after changes constitutes acceptance of the revised policy.</p>
 <h2>9. Contact Us</h2>
-<p>Company: Onesaas Technologies Private Limited<br/>Email: contact@onesaas.in<br/>Phone: +91-7002695990<br/>Address: House No. 356, Nagajan, Kharupetia, Darrang, Assam - 784115, India</p>
+<p>Company: Onesaas Technologies Private Limited<br/>Email: contact@onesaas.in<br/>Phone: +91 70026 95990<br/>Address: H. No. 356, Vill. Nagajan, Niz Kharupetia, Kharupetiaghat, Darrang, Assam 784115, India</p>
 `.trim(),
     },
     {
@@ -125,7 +125,7 @@ const DEFAULT_PAGES = [
 <h2>12. Changes to These Terms</h2>
 <p>We may modify these Terms at any time. Continued use after changes constitutes acceptance.</p>
 <h2>13. Contact Information</h2>
-<p>Onesaas Technologies Private Limited<br/>CIN: U46512AS2024PTC026214<br/>Email: contact@onesaas.in<br/>Phone: +91-7002695990</p>
+<p>Onesaas Technologies Private Limited<br/>CIN: U46512AS2024PTC026214<br/>Email: contact@onesaas.in<br/>Phone: +91 70026 95990<br/>Address: H. No. 356, Vill. Nagajan, Niz Kharupetia, Kharupetiaghat, Darrang, Assam 784115, India</p>
 `.trim(),
     },
     {
@@ -296,6 +296,7 @@ async function setupWebsiteTables() {
 
     await seedWebsiteSettings();
     await refreshPublicContactDefaults();
+    await normalizeLegalPageContactDetails();
 
     for (const page of DEFAULT_PAGES) {
         const [existing] = await pool.query(
@@ -340,9 +341,10 @@ async function refreshPublicContactDefaults() {
     const shortAddressValues = new Set([
         "Kharupetia, Assam, India",
         "House No. 356, Nagajan, Kharupetia, Darrang, Assam, PIN - 784115, India",
+        "House No. 356, Nagajan, Kharupetia, Darrang, Assam - 784115, India",
         "H. No. 356, Vill. Nagajan Niz, Kharupetiaghat, Darrang, Assam 784115",
     ]);
-    const shortPhoneValues = new Set(["+91-7002695990", "+91 7002695990"]);
+    const shortPhoneValues = new Set(["+91-7002695990", "+91 7002695990", "+91-70026 95990"]);
 
     const updates = [];
     if (!existing.footer_address || shortAddressValues.has(String(existing.footer_address).trim())) {
@@ -370,6 +372,40 @@ async function refreshPublicContactDefaults() {
             is_public: 1,
             sort_order: field.sort_order,
         });
+    }
+}
+
+async function normalizeLegalPageContactDetails() {
+    const replacements = [
+        ["+91-7002695990", DEFAULT_CONTACT.phone],
+        ["+91 7002695990", DEFAULT_CONTACT.phone],
+        [
+            "House No. 356, Nagajan, Kharupetia, Darrang, Assam - 784115, India",
+            DEFAULT_CONTACT.address,
+        ],
+        [
+            "House No. 356, Nagajan, Kharupetia, Darrang, Assam, PIN - 784115, India",
+            DEFAULT_CONTACT.address,
+        ],
+    ];
+
+    const [rows] = await pool.query(
+        "SELECT id, content_html FROM website_pages WHERE content_html IS NOT NULL"
+    );
+
+    for (const row of rows) {
+        let next = String(row.content_html || "");
+        let changed = false;
+        for (const [from, to] of replacements) {
+            if (!next.includes(from)) continue;
+            next = next.split(from).join(to);
+            changed = true;
+        }
+        if (!changed) continue;
+        await pool.query(
+            "UPDATE website_pages SET content_html = ?, updated_at = ? WHERE id = ?",
+            [next, TIMESTAMP(), row.id]
+        );
     }
 }
 
