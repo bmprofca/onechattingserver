@@ -13,8 +13,8 @@ export const DEFAULT_CONTACT = {
     company_name: "Onesaas Technologies Private Limited",
     legal_name: "OneSaaS Technologies Private Limited",
     cin: "U46512AS2024PTC026214",
-    address: "House No. 356, Nagajan, Kharupetia, Darrang, Assam, PIN - 784115, India",
-    phone: "+91-7002695990",
+    address: "H. No. 356, Vill. Nagajan, Niz Kharupetia, Kharupetiaghat, Darrang, Assam 784115, India",
+    phone: "+91 70026 95990",
     phone_note: "Mon-Fri, 9AM-6PM IST",
     email: "contact@onesaas.in",
     email_note: "We'll respond within 24 hours",
@@ -22,7 +22,7 @@ export const DEFAULT_CONTACT = {
     website_label: "www.onesaas.in",
     website_note: "Visit our main website",
     footer_blurb: "OneChatting is a WhatsApp Business API platform for live chat, campaigns, templates, team collaboration, and developer integrations — powered by the official WhatsApp Cloud API.",
-    footer_address: "Kharupetia, Assam, India",
+    footer_address: "H. No. 356, Vill. Nagajan, Niz Kharupetia, Kharupetiaghat, Darrang, Assam 784115, India",
     copyright: "© 2026 OneChatting. All rights reserved.",
     cta_title: "Ready to Get Started?",
     cta_text: "Experience the power of OneChatting and transform your WhatsApp business communication today.",
@@ -161,41 +161,95 @@ const DEFAULT_PAGES = [
     {
         slug: "business-policy",
         title: "Business Policy",
-        subtitle: "Effective Date: 01-07-2025",
+        subtitle: "Effective date: 13 November 2026",
         footer_label: "Business Policy",
         sort_order: 4,
         content_html: `
-<h2>1. Company Overview</h2>
-<p>OneSaaS Technologies Private Limited develops web-based CRM and office management software. Our flagship product, OneChatting, helps professional service providers manage staff, clients, tasks, and communications.</p>
-<h2>2. Product and Services</h2>
+<h2>1. Who we are</h2>
+<p>OneChatting is a product of <strong>OneSaaS Technologies Private Limited</strong>, a private limited company incorporated in India.</p>
 <ul>
-<li>Subscription-based access to the OneChatting web application.</li>
-<li>Custom software development for professionals.</li>
-<li>Technical support and software updates.</li>
-<li>Optional integration services such as payment gateways and APIs.</li>
+<li>CIN: U46512AS2024PTC026214</li>
+<li>GSTIN: 18AAECO3487E1ZA</li>
+<li>Registered office: H. No. 356, Vill. Nagajan, Niz Kharupetia, Kharupetiaghat, Darrang, Assam 784115, India</li>
+<li>Email: contact@onesaas.in</li>
+<li>Phone: +91 70026 95990</li>
 </ul>
-<h2>3. Pricing &amp; Payment</h2>
+<h2>2. What OneChatting does</h2>
+<p>OneChatting is a software platform that helps businesses use the official <strong>WhatsApp Business Platform (Cloud API) by Meta</strong>. Through OneChatting, our customers can:</p>
 <ul>
-<li>Services are offered on a subscription basis (monthly, quarterly, or annually).</li>
-<li>Payments are accepted online through integrated payment gateways.</li>
-<li>Invoices and receipts are generated through the platform.</li>
-<li>Pricing plans may change with prior notice.</li>
+<li>connect their own WhatsApp Business Account through Meta's Embedded Signup;</li>
+<li>manage customer conversations in a shared team inbox;</li>
+<li>create message templates and submit them to Meta for approval;</li>
+<li>send template messages to customers who have opted in to receive them;</li>
+<li>connect their own systems through our API.</li>
 </ul>
-<h2>4. Refund and Cancellation Policy</h2>
+<p>Each customer owns its own WhatsApp Business Account, phone number and customer data. OneChatting provides the software and does not message anyone on its own behalf for its customers.</p>
+<h2>3. Who can use OneChatting</h2>
+<p>We onboard only genuine, registered businesses. Before activation, every customer must:</p>
 <ul>
-<li>Subscriptions may be cancelled before renewal; cancellation does not entitle you to a refund.</li>
-<li>Refunds may be initiated only for unauthorized or erroneous system debits after a support ticket.</li>
-<li>Approved refunds are processed within 7 working days from the ticket date.</li>
+<li>provide its legal business name and a valid registration document (for example GST, Udyam, Certificate of Incorporation or a shop licence);</li>
+<li>have a working website or business profile that describes its business;</li>
+<li>accept our Terms of Service, our Acceptable Use Policy, and the WhatsApp Business Terms and Policies.</li>
 </ul>
-<h2>5. Privacy and Terms of Use</h2>
-<p>Customer data remains confidential and is stored securely. The platform is licensed for professional use. Unauthorized reselling, reverse engineering, or hacking will result in termination and legal action.</p>
-<h2>6. Compliance</h2>
-<p>Our software and services comply with applicable Indian IT laws, tax laws, and data privacy norms.</p>
-<h2>7. Contact Details</h2>
-<p>OneSaaS Technologies Private Limited<br/>CIN: U46512AS2024PTC026214<br/>Registered Office: H. No. 356, Vill. Nagajan Niz, Kharupetiaghat, Darrang, Assam 784115<br/>Email: onesaastech@gmail.com / contact@onesaas.in<br/>Phone: +91-7002695990</p>
+<p>We may refuse or suspend any account at our discretion, including where we cannot verify the business.</p>
+<h2>4. Pricing and payment</h2>
+<p>OneChatting is offered on subscription plans (monthly, quarterly or annual) plus a prepaid wallet for WhatsApp conversation charges. Prices are shown on our Pricing page and include applicable GST. Payments are taken through secure payment gateways, and invoices are issued automatically.</p>
+<h2>5. Refunds and cancellation</h2>
+<p>You can cancel a subscription at any time before renewal. Subscription fees already paid are not refundable, except for duplicate or erroneous charges reported through a support ticket. Approved refunds are processed within 7 working days. See our Refund Policy for the full terms.</p>
+<h2>6. Data and privacy</h2>
+<p>We process customer and end-user data only to provide the service, as described in our Privacy Policy and in line with the Digital Personal Data Protection Act, 2023 and the IT Act, 2000. Message content is processed through Meta's WhatsApp Cloud API. We do not sell personal data.</p>
+<h2>7. Compliance with WhatsApp and Meta policies</h2>
+<p>All use of OneChatting must comply with the WhatsApp Business Messaging Policy, the WhatsApp Commerce Policy and Meta's Terms. Our Acceptable Use Policy sets out these rules. Accounts that break them are suspended.</p>
+<h2>8. Grievance officer</h2>
+<p>In line with the IT (Intermediary Guidelines) Rules, 2021:</p>
+<p>Grievance Officer, OneSaaS Technologies Private Limited<br/>Email: contact@onesaas.in · Phone: +91 70026 95990</p>
+<p>We acknowledge complaints within 24 hours and resolve them within 15 days.</p>
+`.trim(),
+    },
+    {
+        slug: "acceptable-use",
+        title: "Acceptable Use and Opt-in Policy",
+        subtitle: "Effective date: 13 November 2026",
+        footer_label: "Acceptable Use",
+        sort_order: 5,
+        content_html: `
+<p>This policy applies to every business that uses OneChatting ("you"). Using OneChatting means you agree to it. It adds to, and does not replace, the WhatsApp Business Terms of Service, the WhatsApp Business Messaging Policy and the WhatsApp Commerce Policy.</p>
+<h2>1. Opt-in is mandatory</h2>
+<ul>
+<li>You may message only people who have <strong>given you their mobile number and agreed to receive WhatsApp messages from your business</strong>.</li>
+<li>The opt-in must make clear that the person is agreeing to WhatsApp messages from your named business.</li>
+<li>You must keep a record of each opt-in (date, source and wording) and show it to us on request.</li>
+<li><strong>Purchased, rented, scraped or third-party contact lists are not allowed.</strong> This includes importing such lists through Excel, CSV or Google Sheets.</li>
+</ul>
+<h2>2. Respect opt-outs</h2>
+<ul>
+<li>Honour every request to stop messages ("STOP", "unsubscribe" or similar) promptly, and do not message that person again unless they opt in again.</li>
+<li>Marketing templates should tell people how to opt out.</li>
+</ul>
+<h2>3. Message quality</h2>
+<ul>
+<li>Use only templates that Meta has approved, and put them in the correct category (Marketing, Utility or Authentication).</li>
+<li>Do not send misleading, threatening or abusive content.</li>
+<li>Do not send messages at a volume or frequency that leads to user blocks or reports. We monitor quality ratings and may limit or pause accounts with low quality.</li>
+</ul>
+<h2>4. Prohibited businesses and content</h2>
+<p>You may not use OneChatting to buy, sell, promote or arrange anything prohibited by the WhatsApp Commerce Policy, including:</p>
+<p>drugs (illegal, prescription or recreational) · tobacco and vapes · alcohol · weapons, ammunition and explosives · gambling and betting, real-money games and lotteries · adult products and services · dating · animals and animal products · medical and healthcare products where restricted · cryptocurrency and unregulated financial products · multi-level marketing and "get rich quick" schemes · counterfeit goods · fake documents · real-money or virtual currency trading · any illegal product or service.</p>
+<p>You may also not use OneChatting for spam, phishing, fraud, impersonation, political messaging where restricted, or anything that breaks Indian law.</p>
+<h2>5. How we enforce this</h2>
+<ul>
+<li>We review every new business before activation.</li>
+<li>We monitor template rejections, quality ratings, blocks and reports from Meta.</li>
+<li>If you break this policy, we may warn you, limit your sending, suspend your account, or remove your WhatsApp Business Account from OneChatting, <strong>without refund</strong>, and we may report you to Meta.</li>
+<li>We cooperate fully with Meta and with law-enforcement requests.</li>
+</ul>
+<h2>6. Reporting abuse</h2>
+<p>To report misuse of a number connected through OneChatting, email <a href="mailto:contact@onesaas.in">contact@onesaas.in</a> with the number and a screenshot. We review every report within 2 business days.</p>
 `.trim(),
     },
 ];
+
+const COMPLIANCE_PAGE_SLUGS = new Set(["business-policy", "acceptable-use"]);
 
 const mapPage = (row) => ({
     id: row.id,
@@ -241,13 +295,33 @@ async function setupWebsiteTables() {
     `);
 
     await seedWebsiteSettings();
+    await refreshPublicContactDefaults();
 
     for (const page of DEFAULT_PAGES) {
         const [existing] = await pool.query(
             "SELECT id FROM website_pages WHERE slug = ? LIMIT 1",
             [page.slug]
         );
-        if (existing.length > 0) continue;
+        if (existing.length > 0) {
+            if (COMPLIANCE_PAGE_SLUGS.has(page.slug)) {
+                await pool.query(
+                    `UPDATE website_pages
+                     SET title = ?, subtitle = ?, content_html = ?, footer_label = ?,
+                         show_in_footer = 1, is_published = 1, sort_order = ?, updated_at = ?
+                     WHERE slug = ?`,
+                    [
+                        page.title,
+                        page.subtitle,
+                        page.content_html,
+                        page.footer_label,
+                        page.sort_order,
+                        TIMESTAMP(),
+                        page.slug,
+                    ]
+                );
+            }
+            continue;
+        }
         try {
             await pool.query(
                 `INSERT INTO website_pages
@@ -258,6 +332,44 @@ async function setupWebsiteTables() {
         } catch (error) {
             if (error?.code !== "ER_DUP_ENTRY") throw error;
         }
+    }
+}
+
+async function refreshPublicContactDefaults() {
+    const existing = await getSettingsMap(WEBSITE_SETTING_GROUP);
+    const shortAddressValues = new Set([
+        "Kharupetia, Assam, India",
+        "House No. 356, Nagajan, Kharupetia, Darrang, Assam, PIN - 784115, India",
+        "H. No. 356, Vill. Nagajan Niz, Kharupetiaghat, Darrang, Assam 784115",
+    ]);
+    const shortPhoneValues = new Set(["+91-7002695990", "+91 7002695990"]);
+
+    const updates = [];
+    if (!existing.footer_address || shortAddressValues.has(String(existing.footer_address).trim())) {
+        updates.push(["footer_address", DEFAULT_CONTACT.footer_address]);
+    }
+    if (!existing.address || shortAddressValues.has(String(existing.address).trim())) {
+        updates.push(["address", DEFAULT_CONTACT.address]);
+    }
+    if (!existing.phone || shortPhoneValues.has(String(existing.phone).trim())) {
+        updates.push(["phone", DEFAULT_CONTACT.phone]);
+    }
+    if (!existing.email) {
+        updates.push(["email", DEFAULT_CONTACT.email]);
+    }
+
+    for (const [key, value] of updates) {
+        const field = CONTACT_FIELDS.find((item) => item.key === key);
+        if (!field) continue;
+        await upsertSetting({
+            setting_group: WEBSITE_SETTING_GROUP,
+            setting_key: key,
+            setting_value: value,
+            label: field.label,
+            value_type: field.value_type,
+            is_public: 1,
+            sort_order: field.sort_order,
+        });
     }
 }
 
